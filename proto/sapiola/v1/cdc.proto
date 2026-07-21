@@ -1,0 +1,24 @@
+syntax = "proto3";
+package sapiola.v1;
+option go_package = "github.com/sapiola/sap-cdc-core/gen/proto/sapiola/v1";
+
+import "google/protobuf/timestamp.proto";
+import "sapiola/v1/common.proto";
+
+message CdcEvent {
+  string table = 1;
+  string primary_key = 2;
+  Operation operation = 3;
+  map<string, Value> before = 4;
+  map<string, Value> after = 5;
+  google.protobuf.Timestamp timestamp = 6;
+  string txid = 7;
+  int64 log_sequence_number = 8;
+}
+
+enum Operation {
+  OPERATION_UNSPECIFIED = 0;
+  OPERATION_INSERT = 1;
+  OPERATION_UPDATE = 2;
+  OPERATION_DELETE = 3;
+}

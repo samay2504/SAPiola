@@ -1,0 +1,26 @@
+syntax = "proto3";
+package sapiola.v1;
+option go_package = "github.com/sapiola/sap-cdc-core/gen/proto/sapiola/v1";
+
+service StorageService {
+  rpc PutEdge(PutEdgeRequest) returns (PutEdgeResponse);
+  rpc GetNeighbors(GetNeighborsRequest) returns (GetNeighborsResponse);
+}
+
+message PutEdgeRequest {
+  uint64 source_id = 1;
+  uint64 target_id = 2;
+  // Ignoring properties for contention test to keep it simple
+}
+
+message PutEdgeResponse {
+  bool success = 1;
+}
+
+message GetNeighborsRequest {
+  uint64 node_id = 1;
+}
+
+message GetNeighborsResponse {
+  repeated uint64 neighbor_ids = 1;
+}

@@ -1,0 +1,86 @@
+syntax = "proto3";
+package sapiola.v1;
+option go_package = "github.com/sapiola/sap-cdc-core/gen/proto/sapiola/v1";
+
+import "google/protobuf/struct.proto";
+import "sapiola/v1/common.proto";
+
+// ─── Graph API — versioned contract for Phase 1 (INV-6, INV-8) ──────────────
+
+// A graph node returned by a query.
+message GraphNode {
+  NodeId id = 1;
+  string label = 2;
+  map<string, string> properties = 3;
+}
+
+// A graph edge returned by a query.
+message GraphEdge {
+  NodeId from_id = 1;
+  NodeId to_id   = 2;
+  string label   = 3;
+  map<string, string> properties = 4;
+}
+
+// A single result row from a Cypher query.
+message QueryRow {
+  // Keyed by RETURN alias. Value is JSON-encoded.
+  map<string, string> columns = 1;
+}
+
+// ─── Cypher query request ────────────────────────────────────────────────────
+
+message CypherQueryRequest {
+  // Cypher-subset query string.
+  string cypher = 1;
+  // Optional: limit number of results (overrides LIMIT clause if set).
+  uint32 limit  = 2;
+}
+
+message CypherQueryResponse {
+  repeated QueryRow rows  = 1;
+  // Wall-clock execution time in milliseconds (observability only).
+  uint64 execution_ms      = 2;
+  // Route: "cold" (SAP table) or "hot" (Poly-LSM). Phase 1 always "cold".
+  string path              = 3;
+  Error  error             = 4;
+}
+
+// ─── Schema introspection ────────────────────────────────────────────────────
+
+message ListLabelsRequest {}
+
+message ListLabelsResponse {
+  repeated string node_labels = 1;
+  repeated string edge_labels = 2;
+}
+
+// ─── RAG Candidate Retrieval ───────────────────────────────────────────────────
+
+message QueryCandidatesRequest {
+  string domain = 1;
+  string query = 2;
+}
+
+message CandidateInfo {
+  uint64 node_id = 1;
+  string label = 2;
+  string sap_key = 3;
+  repeated string pointer_path = 4;
+}
+
+message QueryCandidatesResponse {
+  repeated CandidateInfo candidates = 1;
+  Error error = 2;
+}
+
+// ─── Graph API service ───────────────────────────────────────────────────────
+
+service GraphService {
+  // Execute a Cypher-subset query (INV-8).
+  rpc Query(CypherQueryRequest) returns (CypherQueryResponse);
+  // Introspect available node and edge labels.
+  rpc ListLabels(ListLabelsRequest) returns (ListLabelsResponse);
+  // Fast-path RAG candidate retrieval (Phase 3).
+  rpc QueryCandidates(QueryCandidatesRequest) returns (QueryCandidatesResponse);
+}

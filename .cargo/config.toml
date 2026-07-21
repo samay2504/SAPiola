@@ -1,0 +1,10 @@
+# Project-level Cargo configuration
+#
+# Windows GNU toolchain (stable-x86_64-pc-windows-gnu) is the active default.
+# GCC 11.2 from MinGW provides the linker. The MSVC toolchain is available but
+# not active; it can be selected per-project with `rustup override set msvc`.
+#
+# rustflags: x86-64-v3 targets AVX2 (Haswell+), appropriate for server builds.
+
+[build]
+rustflags = ["-C", "target-cpu=x86-64-v3"]

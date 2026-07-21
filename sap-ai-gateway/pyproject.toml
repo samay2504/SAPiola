@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sapiola-ai-gateway"
+version = "0.1.0"
+description = "SAPiola phase 3 AI gateway for structural RAG"
+requires-python = ">=3.11"
+dependencies = [
+    "lancedb>=0.34",
+    "tenacity",
+    "aiobreaker",
+    "structlog",
+    "prometheus-client",
+    "grpcio",
+    "sentence-transformers",
+    "litellm",
+    "pydantic-settings",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "grpcio-tools",
+]
+
+[tool.setuptools]
+package-dir = {"" = "."}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sapiola_ai*"]

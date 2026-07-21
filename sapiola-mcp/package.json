@@ -1,0 +1,17 @@
+{
+  "name": "sapiola-mcp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "postinstall": "node scripts/fetch-binary.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bin": {
+    "sapiola-mcp": "./bin/run.js"
+  },
+  "dependencies": {}
+}

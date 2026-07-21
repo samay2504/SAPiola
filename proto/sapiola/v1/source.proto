@@ -1,0 +1,35 @@
+syntax = "proto3";
+package sapiola.v1;
+option go_package = "github.com/sapiola/sap-cdc-core/gen/proto/sapiola/v1";
+
+import "sapiola/v1/cdc.proto";
+
+service CdcIngest {
+  // Unary publish for simple clients
+  rpc PublishEvent(CdcEvent) returns (PublishResponse);
+  
+  // Client streaming for high-throughput batch ingestion
+  rpc PublishEventsStream(stream CdcEvent) returns (PublishResponse);
+}
+
+message PublishResponse {
+  int32 processed_count = 1;
+  string error_message = 2;
+}
+
+// Schema Descriptor structures used by introspectors
+message RawSchemaDescriptor {
+  string source_id = 1;
+  repeated TableSchema tables = 2;
+}
+
+message TableSchema {
+  string table_name = 1;
+  repeated ColumnInfo columns = 2;
+}
+
+message ColumnInfo {
+  string name = 1;
+  string data_type = 2;
+  bool is_likely_unique = 3;
+}

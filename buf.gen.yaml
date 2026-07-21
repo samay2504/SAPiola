@@ -1,0 +1,16 @@
+version: v2
+plugins:
+  - remote: buf.build/protocolbuffers/go
+    out: sap-cdc-core/gen/proto
+    opt: paths=source_relative
+  - remote: buf.build/grpc/go
+    out: sap-cdc-core/gen/proto
+    opt: paths=source_relative
+  - remote: buf.build/protocolbuffers/python
+    out: tools/salt_importer/gen
+  - remote: buf.build/grpc/python
+    out: tools/salt_importer/gen
+  - remote: buf.build/community/neoeinstein-prost
+    out: sap-streaming-gateway/src/gen
+  - remote: buf.build/community/timostamm-protobuf-ts
+    out: sapiola-mcp/src/generated

@@ -1,0 +1,8 @@
+target/
+.git/
+benchmarks/
+salt/
+idempotency.db
+*.exe
+*.dll
+*.log

@@ -1,0 +1,14 @@
+lancedb>=0.34
+tenacity
+aiobreaker
+structlog
+prometheus-client
+grpcio
+sentence-transformers
+litellm
+pydantic-settings
+
+[dev]
+pytest
+pytest-asyncio
+grpcio-tools

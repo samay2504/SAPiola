@@ -1,0 +1,99 @@
+version: "3.8"
+
+services:
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.2
+    container_name: redpanda
+    command:
+      - redpanda
+      - start
+      - --smp 1
+      - --memory 1G
+      - --reserve-memory 0M
+      - --overprovisioned
+      - --node-id 0
+      - --check=false
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr redpanda:33145
+      - --advertise-rpc-addr redpanda:33145
+    ports:
+      - "19092:19092"
+      - "18081:18081"
+      - "18082:18082"
+      - "9644:9644"
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+
+  # Optionally add an init container to create the topic immediately
+  redpanda-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.2
+    depends_on:
+      - redpanda
+    command: >
+      bash -c '
+        echo "Waiting for Redpanda to be ready..." &&
+        while [ "$$(rpk cluster info -X brokers=redpanda:9092 | grep -c redpanda)" -eq 0 ]; do sleep 1; done &&
+        echo "Creating sap.cdc.events topic..." &&
+        rpk topic create sap.cdc.events --partitions 1 -X brokers=redpanda:9092
+      '
+
+  cdc-agent:
+    build:
+      context: ./sap-cdc-core
+      dockerfile: Dockerfile
+    container_name: sap_cdc_agent
+    environment:
+      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_TOPIC=sap.cdc.events
+    depends_on:
+      - redpanda-init
+    command: ["-kafka-brokers", "redpanda:9092"]
+    volumes:
+      - ./idempotency.db:/app/idempotency.db
+
+  ingest-gateway:
+    build:
+      context: ./sap-cdc-core
+      dockerfile: Dockerfile.ingest
+    container_name: sap_ingest_gateway
+    environment:
+      - KAFKA_BROKERS=redpanda:9092
+      - CDC_TOPIC=sap.cdc.events
+    depends_on:
+      - redpanda-init
+    ports:
+      - "50051:50051"
+
+  streaming-gateway:
+    build:
+      context: .
+      dockerfile: ./sap-streaming-gateway/Dockerfile
+    container_name: sap_streaming_gateway
+    environment:
+      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_TOPIC=sap.cdc.events
+      - GRAPH_SERVER_TARGET=http://graph-server:50052
+    depends_on:
+      - redpanda-init
+      - graph-server
+
+  graph-server:
+    build:
+      context: .
+      dockerfile: ./sap-graph-layer/Dockerfile
+    container_name: sap_graph_server
+    environment:
+      - GRAPH_SERVER_LISTEN_ADDR=0.0.0.0:50052
+      - LSM_DB_PATH=/app/data/lsm_db
+    ports:
+      - "50052:50052"
+    volumes:
+      - lsm-data:/app/data
+
+volumes:
+  redpanda-data:
+  lsm-data:

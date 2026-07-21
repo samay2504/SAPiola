@@ -1,0 +1,26 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+
+ident = @{ (ASCII_ALPHANUMERIC | "_")+ }
+string_lit = ${ "'" ~ inner_str ~ "'" | "\"" ~ inner_str ~ "\"" }
+inner_str = @{ (!("'" | "\"") ~ ANY)* }
+number = @{ ASCII_DIGIT+ }
+
+var_name = { ident }
+label = { ident }
+prop_name = { ident }
+
+node_pattern = { "(" ~ var_name ~ ":" ~ label ~ ")" }
+edge_pattern = { "-[" ~ var_name? ~ ":" ~ label ~ "]->" }
+
+path_pattern = { node_pattern ~ (edge_pattern ~ node_pattern)* }
+
+match_clause = { ^"MATCH" ~ path_pattern }
+
+condition = { var_name ~ "." ~ prop_name ~ "=" ~ (string_lit | number) }
+where_clause = { ^"WHERE" ~ condition ~ (^"AND" ~ condition)* }
+
+return_clause = { ^"RETURN" ~ var_name ~ ("," ~ var_name)* }
+
+limit_clause = { ^"LIMIT" ~ number }
+
+query = { SOI ~ match_clause ~ where_clause? ~ return_clause ~ limit_clause? ~ EOI }

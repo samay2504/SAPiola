@@ -1,0 +1,18 @@
+Metadata-Version: 2.4
+Name: sapiola-ai-gateway
+Version: 0.1.0
+Summary: SAPiola phase 3 AI gateway for structural RAG
+Requires-Python: >=3.11
+Requires-Dist: lancedb>=0.34
+Requires-Dist: tenacity
+Requires-Dist: aiobreaker
+Requires-Dist: structlog
+Requires-Dist: prometheus-client
+Requires-Dist: grpcio
+Requires-Dist: sentence-transformers
+Requires-Dist: litellm
+Requires-Dist: pydantic-settings
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: pytest-asyncio; extra == "dev"
+Requires-Dist: grpcio-tools; extra == "dev"

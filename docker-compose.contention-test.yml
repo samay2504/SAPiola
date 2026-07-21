@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  # The toxiproxy instance that proxies traffic to our backend
+  toxiproxy:
+    image: shopify/toxiproxy
+    ports:
+      - "8474:8474"   # Toxiproxy API
+      - "50051:50051" # Proxied backend 1
+      - "50052:50052" # Proxied backend 2
+      - "50053:50053" # Proxied backend 3
+    # No depends_on needed if backend is running on host
+
+  # To trigger optimistic concurrency aborts, we will configure Toxiproxy
+  # to inject latency jitter and bandwidth constraints.

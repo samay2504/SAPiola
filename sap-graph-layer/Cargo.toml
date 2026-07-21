@@ -1,0 +1,50 @@
+[package]
+name = "sap-graph-layer"
+version = "0.1.0"
+edition = "2021"
+
+# Kleppmann Ch.3 pp.68,82 — this crate owns cold-path (SAP table) reads via the
+# mapping DSL and planner, and will later route hot-path reads to poly-lsm-core.
+# Stateless workers: no shared mutable state between query executions.
+
+[dependencies]
+tonic      = { workspace = true }
+prost      = { workspace = true }
+prost-types = { workspace = true }
+tokio      = { workspace = true, features = ["full"] }
+serde      = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tracing.workspace = true
+tracing-subscriber = { workspace = true }
+anyhow.workspace = true
+thiserror.workspace = true
+
+# nom for zero-copy, incremental DSL parsing — O(n) per input byte, no heap alloc
+# beyond the final AST nodes.
+nom = "7"
+
+# hdbconnect_async: pure-Rust async SAP HANA driver (no JVM, no FFI).
+# Falls back to the generic sql mock for tests via feature flags below.
+hdbconnect_async = "0.30"
+
+# arrow-rs: columnar in-memory format for result batches.
+# Zero-copy slicing; each RecordBatch is Arc<dyn Array> — O(1) clone.
+arrow = { version = "55", features = ["prettyprint"] }
+
+# async-trait: allows async fn in traits (dyn-safe SqlConnection)
+async-trait = "0.1"
+
+poly-lsm-core = { path = "../poly-lsm-core" }
+pest = "2.8.7"
+pest_derive = "2.8.7"
+tokio-postgres = "0.7.18"
+bb8 = "0.9.1"
+bb8-postgres = "0.9.0"
+tonic-health = "0.12"
+
+[build-dependencies]
+tonic-build = "0.12"
+
+[dev-dependencies]
+tokio-test  = "0.4"
+pretty_assertions = "1"

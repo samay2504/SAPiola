@@ -1,0 +1,41 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Go
+/bin/
+/pkg/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Databases and Tests
+test_db*
+*.rdb
+idempotency.db
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.env
+
+# Node.js
+node_modules/
+dist/
+npm-debug.log*
+yarn-error.log*
+.pnp.*
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log

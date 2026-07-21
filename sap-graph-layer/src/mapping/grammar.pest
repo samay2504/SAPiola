@@ -1,0 +1,22 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+
+ident = @{ (ASCII_ALPHANUMERIC | "_")+ }
+
+prop_list = { "PROPERTIES" ~ "(" ~ ident ~ ("," ~ ident)* ~ ")" }
+
+node_def = { 
+    "NODE" ~ ident ~ 
+    "FROM" ~ ident ~ 
+    "WITH" ~ "id" ~ "=" ~ ident ~ 
+    prop_list? 
+}
+
+edge_def = { 
+    "EDGE" ~ ident ~ 
+    "FROM" ~ ident ~ 
+    "USING" ~ ident ~ "->" ~ ident ~ 
+    prop_list? 
+}
+
+statement = { node_def | edge_def }
+file = { SOI ~ statement* ~ EOI }

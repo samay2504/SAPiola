@@ -1,0 +1,25 @@
+syntax = "proto3";
+package sapiola.v1;
+option go_package = "github.com/sapiola/sap-cdc-core/gen/proto/sapiola/v1";
+
+import "google/protobuf/timestamp.proto";
+
+message Value {
+  oneof kind {
+    string string_value = 1;
+    int64 int_value = 2;
+    double double_value = 3;
+    bool bool_value = 4;
+    bytes bytes_value = 5;
+  }
+}
+
+message Error {
+  int32 code = 1;
+  string message = 2;
+  map<string, string> details = 3;
+}
+
+message NodeId {
+  int64 id = 1;
+}
