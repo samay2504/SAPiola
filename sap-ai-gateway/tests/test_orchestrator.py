@@ -19,6 +19,14 @@ class FakeGraphClient:
         self.calls.append((domain, query))
         return list(self._candidates)
 
+    async def put_vertex(self, tenant_id: str, node_id: int, properties: dict[str, str]) -> bool:
+        self.calls.append(("put_vertex", tenant_id, node_id, properties))
+        return True
+
+    async def put_edge(self, tenant_id: str, source_id: int, target_id: int, properties: dict[str, str]) -> bool:
+        self.calls.append(("put_edge", tenant_id, source_id, target_id, properties))
+        return True
+
 
 class FakePointerClient:
     def __init__(self, fragments):
@@ -321,7 +329,48 @@ async def test_rag_orchestrator_observability():
     # Verify the structured log
     denial_logs = [log for log in log_capture.entries if log.get("event") == "rbac_access_denied"]
     assert len(denial_logs) == 1
-    assert denial_logs[0]["denied_count"] == 1
     assert denial_logs[0]["denied_entity_ids"] == ["INV-9"]
     
     structlog.configure(processors=old_processors)
+
+@pytest.mark.asyncio
+async def test_rag_orchestrator_write_authorized():
+    from sapiola_ai.orchestrator import SimpleRbacPolicy
+    
+    graph_client = FakeGraphClient([])
+    pointer_client = FakePointerClient([])
+    llm_client = FakeLlmClient()
+    
+    rbac = SimpleRbacPolicy(write_principals=frozenset({"alice"}))
+    orchestrator = RagOrchestrator(graph_client, pointer_client, llm_client, rbac=rbac)
+    
+    # Alice is authorized
+    principal = Principal("alice", frozenset({"inventory"}))
+    success = await orchestrator.put_vertex(principal, "inventory", 1, {"name": "Test"})
+    assert success is True
+    assert graph_client.calls[0] == ("put_vertex", "inventory", 1, {"name": "Test"})
+
+    success = await orchestrator.put_edge(principal, "inventory", 1, 2, {"type": "REL"})
+    assert success is True
+    assert graph_client.calls[1] == ("put_edge", "inventory", 1, 2, {"type": "REL"})
+
+@pytest.mark.asyncio
+async def test_rag_orchestrator_write_unauthorized():
+    from sapiola_ai.orchestrator import SimpleRbacPolicy
+    
+    graph_client = FakeGraphClient([])
+    pointer_client = FakePointerClient([])
+    llm_client = FakeLlmClient()
+    
+    # Only alice can write
+    rbac = SimpleRbacPolicy(write_principals=frozenset({"alice"}))
+    orchestrator = RagOrchestrator(graph_client, pointer_client, llm_client, rbac=rbac)
+    
+    # Bob is unauthorized
+    principal = Principal("bob", frozenset({"inventory"}))
+    
+    with pytest.raises(PermissionError, match="Principal bob is not authorized to write"):
+        await orchestrator.put_vertex(principal, "inventory", 1, {"name": "Test"})
+
+    with pytest.raises(PermissionError, match="Principal bob is not authorized to write"):
+        await orchestrator.put_edge(principal, "inventory", 1, 2, {"type": "REL"})

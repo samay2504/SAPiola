@@ -129,6 +129,13 @@ impl Catalog {
         }
         Ok(())
     }
+
+    /// Returns a summary of the available nodes and edges for schema introspection
+    pub fn summary_for_tenant(&self, _tenant_id: &str) -> (Vec<String>, Vec<String>) {
+        let node_labels: Vec<String> = self.nodes.keys().cloned().collect();
+        let edge_labels: Vec<String> = self.edges.keys().cloned().collect();
+        (node_labels, edge_labels)
+    }
 }
 
 #[cfg(test)]

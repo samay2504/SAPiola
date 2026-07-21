@@ -58,6 +58,10 @@ class RagResult:
 class GraphClient(Protocol):
     async def search(self, domain: str, query: str) -> list[GraphCandidate]:
         raise NotImplementedError
+    async def put_vertex(self, tenant_id: str, node_id: int, properties: dict[str, str]) -> bool:
+        raise NotImplementedError
+    async def put_edge(self, tenant_id: str, source_id: int, target_id: int, properties: dict[str, str]) -> bool:
+        raise NotImplementedError
 
 
 class PointerIndexClient(Protocol):
@@ -95,9 +99,15 @@ class DomainClassifier:
 
 
 class SimpleRbacPolicy:
+    def __init__(self, write_principals: frozenset[str] = frozenset()):
+        self._write_principals = write_principals
+
     @classmethod
     def from_env(cls) -> "SimpleRbacPolicy":
-        return cls()
+        import os
+        write_principals_str = os.environ.get("SAPIOLA_WRITE_PRINCIPALS", "")
+        write_principals = frozenset(p.strip() for p in write_principals_str.split(",") if p.strip())
+        return cls(write_principals=write_principals)
 
     def allowed(self, principal: Principal, domain: str) -> bool:
         return domain in principal.domains or "*" in principal.domains
@@ -107,6 +117,9 @@ class SimpleRbacPolicy:
 
     def filter_fragments(self, principal: Principal, fragments: Iterable[PointerFragment]) -> list[PointerFragment]:
         return [fragment for fragment in fragments if self.allowed(principal, fragment.domain)]
+
+    def can_write(self, principal: Principal) -> bool:
+        return principal.name in self._write_principals or "*" in self._write_principals
 
 
 class RagOrchestrator:
@@ -241,3 +254,13 @@ class RagOrchestrator:
                 *(fragment_lines or ["- none"]),
             ]
         )
+
+    async def put_vertex(self, principal: Principal, tenant_id: str, node_id: int, properties: dict[str, str]) -> bool:
+        if not self._rbac.can_write(principal):
+            raise PermissionError(f"Principal {principal.name} is not authorized to write")
+        return await self._graph_client.put_vertex(tenant_id, node_id, properties)
+
+    async def put_edge(self, principal: Principal, tenant_id: str, source_id: int, target_id: int, properties: dict[str, str]) -> bool:
+        if not self._rbac.can_write(principal):
+            raise PermissionError(f"Principal {principal.name} is not authorized to write")
+        return await self._graph_client.put_edge(tenant_id, source_id, target_id, properties)

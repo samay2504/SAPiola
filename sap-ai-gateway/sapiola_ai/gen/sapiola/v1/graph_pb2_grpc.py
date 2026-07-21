@@ -41,10 +41,10 @@ class GraphServiceStub:
                 request_serializer=sapiola_dot_v1_dot_graph__pb2.CypherQueryRequest.SerializeToString,
                 response_deserializer=sapiola_dot_v1_dot_graph__pb2.CypherQueryResponse.FromString,
                 _registered_method=True)
-        self.ListLabels = channel.unary_unary(
-                '/sapiola.v1.GraphService/ListLabels',
-                request_serializer=sapiola_dot_v1_dot_graph__pb2.ListLabelsRequest.SerializeToString,
-                response_deserializer=sapiola_dot_v1_dot_graph__pb2.ListLabelsResponse.FromString,
+        self.ListSchema = channel.unary_unary(
+                '/sapiola.v1.GraphService/ListSchema',
+                request_serializer=sapiola_dot_v1_dot_graph__pb2.ListSchemaRequest.SerializeToString,
+                response_deserializer=sapiola_dot_v1_dot_graph__pb2.ListSchemaResponse.FromString,
                 _registered_method=True)
         self.QueryCandidates = channel.unary_unary(
                 '/sapiola.v1.GraphService/QueryCandidates',
@@ -65,7 +65,7 @@ class GraphServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def ListLabels(self, request, context):
+    def ListSchema(self, request, context):
         """Introspect available node and edge labels.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -87,10 +87,10 @@ def add_GraphServiceServicer_to_server(servicer, server):
                     request_deserializer=sapiola_dot_v1_dot_graph__pb2.CypherQueryRequest.FromString,
                     response_serializer=sapiola_dot_v1_dot_graph__pb2.CypherQueryResponse.SerializeToString,
             ),
-            'ListLabels': grpc.unary_unary_rpc_method_handler(
-                    servicer.ListLabels,
-                    request_deserializer=sapiola_dot_v1_dot_graph__pb2.ListLabelsRequest.FromString,
-                    response_serializer=sapiola_dot_v1_dot_graph__pb2.ListLabelsResponse.SerializeToString,
+            'ListSchema': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListSchema,
+                    request_deserializer=sapiola_dot_v1_dot_graph__pb2.ListSchemaRequest.FromString,
+                    response_serializer=sapiola_dot_v1_dot_graph__pb2.ListSchemaResponse.SerializeToString,
             ),
             'QueryCandidates': grpc.unary_unary_rpc_method_handler(
                     servicer.QueryCandidates,
@@ -138,7 +138,7 @@ class GraphService:
             _registered_method=True)
 
     @staticmethod
-    def ListLabels(request,
+    def ListSchema(request,
             target,
             options=(),
             channel_credentials=None,
@@ -151,9 +151,9 @@ class GraphService:
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/sapiola.v1.GraphService/ListLabels',
-            sapiola_dot_v1_dot_graph__pb2.ListLabelsRequest.SerializeToString,
-            sapiola_dot_v1_dot_graph__pb2.ListLabelsResponse.FromString,
+            '/sapiola.v1.GraphService/ListSchema',
+            sapiola_dot_v1_dot_graph__pb2.ListSchemaRequest.SerializeToString,
+            sapiola_dot_v1_dot_graph__pb2.ListSchemaResponse.FromString,
             options,
             channel_credentials,
             insecure,

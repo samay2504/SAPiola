@@ -4,16 +4,27 @@ option go_package = "github.com/sapiola/sap-cdc-core/gen/proto/sapiola/v1";
 
 service StorageService {
   rpc PutEdge(PutEdgeRequest) returns (PutEdgeResponse);
+  rpc PutVertex(PutVertexRequest) returns (PutVertexResponse);
   rpc GetNeighbors(GetNeighborsRequest) returns (GetNeighborsResponse);
+  rpc GetVertex(GetVertexRequest) returns (GetVertexResponse);
 }
 
 message PutEdgeRequest {
   uint64 source_id = 1;
   uint64 target_id = 2;
-  // Ignoring properties for contention test to keep it simple
+  map<string, string> properties = 3;
 }
 
 message PutEdgeResponse {
+  bool success = 1;
+}
+
+message PutVertexRequest {
+  uint64 node_id = 1;
+  map<string, string> properties = 2;
+}
+
+message PutVertexResponse {
   bool success = 1;
 }
 
@@ -22,5 +33,15 @@ message GetNeighborsRequest {
 }
 
 message GetNeighborsResponse {
-  repeated uint64 neighbor_ids = 1;
+  repeated uint64 out_edges = 1;
+  repeated uint64 in_edges = 2;
+}
+
+message GetVertexRequest {
+  uint64 node_id = 1;
+}
+
+message GetVertexResponse {
+  uint64 node_id = 1;
+  map<string, string> properties = 2;
 }

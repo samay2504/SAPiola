@@ -48,9 +48,9 @@ message CypherQueryResponse {
 
 // ─── Schema introspection ────────────────────────────────────────────────────
 
-message ListLabelsRequest {}
+message ListSchemaRequest {}
 
-message ListLabelsResponse {
+message ListSchemaResponse {
   repeated string node_labels = 1;
   repeated string edge_labels = 2;
 }
@@ -80,7 +80,7 @@ service GraphService {
   // Execute a Cypher-subset query (INV-8).
   rpc Query(CypherQueryRequest) returns (CypherQueryResponse);
   // Introspect available node and edge labels.
-  rpc ListLabels(ListLabelsRequest) returns (ListLabelsResponse);
+  rpc ListSchema(ListSchemaRequest) returns (ListSchemaResponse);
   // Fast-path RAG candidate retrieval (Phase 3).
   rpc QueryCandidates(QueryCandidatesRequest) returns (QueryCandidatesResponse);
 }

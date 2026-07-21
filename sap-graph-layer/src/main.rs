@@ -12,17 +12,22 @@ use pb::graph_service_server::{GraphService, GraphServiceServer};
 use pb::storage_service_server::{StorageService, StorageServiceServer};
 use pb::{
     QueryCandidatesRequest, QueryCandidatesResponse, CandidateInfo, CypherQueryRequest,
-    CypherQueryResponse, ListLabelsRequest, ListLabelsResponse, PutEdgeRequest, PutEdgeResponse,
-    GetNeighborsRequest, GetNeighborsResponse,
+    CypherQueryResponse, ListSchemaRequest, ListSchemaResponse, PutEdgeRequest, PutEdgeResponse,
+    GetNeighborsRequest, GetNeighborsResponse, PutVertexRequest, PutVertexResponse,
+    GetVertexRequest, GetVertexResponse,
 };
+
+use sap_graph_layer::mapping::dsl::Catalog;
+use tokio::sync::RwLock;
 
 pub struct GraphServiceImpl {
     engine: Arc<PolyLsmEngine>,
+    catalog: Arc<RwLock<Catalog>>,
 }
 
 impl GraphServiceImpl {
-    pub fn new(engine: Arc<PolyLsmEngine>) -> Self {
-        Self { engine }
+    pub fn new(engine: Arc<PolyLsmEngine>, catalog: Arc<RwLock<Catalog>>) -> Self {
+        Self { engine, catalog }
     }
 }
 
@@ -85,8 +90,14 @@ impl GraphService for GraphServiceImpl {
         Err(Status::unimplemented("Not implemented"))
     }
     
-    async fn list_labels(&self, _req: Request<ListLabelsRequest>) -> Result<Response<ListLabelsResponse>, Status> {
-        Err(Status::unimplemented("Not implemented"))
+    async fn list_schema(&self, _req: Request<ListSchemaRequest>) -> Result<Response<ListSchemaResponse>, Status> {
+        let catalog = self.catalog.read().await;
+        // Tenant is currently ignored in summary_for_tenant, but could be passed if needed
+        let (node_labels, edge_labels) = catalog.summary_for_tenant("default");
+        Ok(Response::new(ListSchemaResponse {
+            node_labels,
+            edge_labels,
+        }))
     }
 }
 
@@ -124,6 +135,47 @@ impl StorageService for StorageServiceImpl {
         }
     }
 
+    async fn put_vertex(
+        &self,
+        request: Request<PutVertexRequest>,
+    ) -> Result<Response<PutVertexResponse>, Status> {
+        let tenant_id = request
+            .metadata()
+            .get("tenant-id")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("default")
+            .to_string();
+
+        let req = request.into_inner();
+        let node_id: i64 = req.node_id.try_into().unwrap_or(0);
+        
+        match self.engine.put_vertex(&tenant_id, node_id, &req.properties) {
+            Ok(_) => Ok(Response::new(PutVertexResponse { success: true })),
+            Err(e) => Err(Status::internal(format!("Failed to put vertex: {}", e))),
+        }
+    }
+
+    async fn get_vertex(
+        &self,
+        request: Request<GetVertexRequest>,
+    ) -> Result<Response<GetVertexResponse>, Status> {
+        let tenant_id = request
+            .metadata()
+            .get("tenant-id")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("default")
+            .to_string();
+
+        let req = request.into_inner();
+        let node_id: i64 = req.node_id.try_into().unwrap_or(0);
+        
+        match self.engine.get_vertex(&tenant_id, node_id) {
+            Ok(Some(props)) => Ok(Response::new(GetVertexResponse { node_id: req.node_id, properties: props })),
+            Ok(None) => Err(Status::not_found("Vertex not found")),
+            Err(e) => Err(Status::internal(format!("Failed to get vertex: {}", e))),
+        }
+    }
+
     async fn get_neighbors(
         &self,
         request: Request<GetNeighborsRequest>,
@@ -136,14 +188,15 @@ impl StorageService for StorageServiceImpl {
             .to_string();
 
         let req = request.into_inner();
-        let node_id: i64 = req.node_id.try_into().map_err(|_| Status::invalid_argument("node_id out of range for i64"))?;
+        let node_id: i64 = req.node_id.try_into().unwrap_or(0);
         
-        match self.engine.get_neighbors(&tenant_id, node_id.try_into().unwrap_or(0)) {
+        match self.engine.get_neighbors(&tenant_id, node_id) {
             Ok(Some(edges)) => {
-                let neighbor_ids = edges.out_edges.iter().map(|&id| id as u64).collect();
-                Ok(Response::new(GetNeighborsResponse { neighbor_ids }))
+                let out_edges = edges.out_edges.into_iter().map(|id| id as u64).collect();
+                let in_edges = edges.in_edges.into_iter().map(|id| id as u64).collect();
+                Ok(Response::new(GetNeighborsResponse { out_edges, in_edges }))
             }
-            Ok(None) => Ok(Response::new(GetNeighborsResponse { neighbor_ids: vec![] })),
+            Ok(None) => Ok(Response::new(GetNeighborsResponse { out_edges: vec![], in_edges: vec![] })),
             Err(e) => Err(Status::internal(format!("Failed to get neighbors: {}", e))),
         }
     }
@@ -168,7 +221,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         poly_lsm_core::engine::spawn_migration_worker(engine_clone, rx).await;
     });
 
-    let graph_service = GraphServiceImpl::new(engine.clone());
+    let dsl_path = env::var("SAPIOLA_MAPPING_DSL").unwrap_or_else(|_| "tools/salt_importer/salt_mapping.dsl".to_string());
+    
+    let mut catalog = Catalog::new();
+    if let Err(e) = catalog.reload(&dsl_path) {
+        warn!("Failed to load mapping DSL from {}: {}. ListSchema will be empty.", dsl_path, e);
+    }
+    let catalog = Arc::new(RwLock::new(catalog));
+
+    let graph_service = GraphServiceImpl::new(engine.clone(), catalog.clone());
     let storage_service = StorageServiceImpl::new(engine);
     
     let (mut health_reporter, health_service) = tonic_health::server::health_reporter();

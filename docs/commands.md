@@ -12,7 +12,7 @@ The Python importer streams mock SALT data into the SAPiola ingest gateway.
 ```bash
 python importer.py
 ```
-*Note: This requires `sap-streaming-gateway` (or `sap-cdc-core`) to be actively listening on `localhost:50051`, otherwise the gRPC connection will refuse.*
+*Note: This requires `sap-streaming-gateway` (or `sap-cdc-core`) to be actively listening on `localhost:50053`, otherwise the gRPC connection will refuse.*
 
 ## 2. SAP AI Gateway (`sap-ai-gateway`)
 
@@ -22,7 +22,7 @@ The FastAPI-based Generative AI orchestration layer.
 
 **Environment Variables Required:**
 - `SAPIOLA_GEMINI_API_KEY` (or other litellm provider keys)
-- `SAPIOLA_GRAPH_URL` (defaults to `http://[::1]:50051`)
+- `SAPIOLA_GRAPH_URL` (defaults to `http://[::1]:50051`, but should be `http://127.0.0.1:50053` for local setup)
 
 **Run Development Server:**
 ```bash

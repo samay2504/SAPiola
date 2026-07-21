@@ -10,6 +10,8 @@ if str(gen_path) not in sys.path:
 
 from sapiola.v1 import graph_pb2
 from sapiola.v1 import graph_pb2_grpc
+from sapiola.v1 import storage_pb2
+from sapiola.v1 import storage_pb2_grpc
 
 from sapiola_ai.orchestrator import GraphCandidate
 from sapiola_ai.resiliency import resilient_call
@@ -22,6 +24,7 @@ class GrpcGraphClient:
         # Connect to the grpc server
         self._channel = grpc.aio.insecure_channel(self.target)
         self._stub = graph_pb2_grpc.GraphServiceStub(self._channel)
+        self._storage_stub = storage_pb2_grpc.StorageServiceStub(self._channel)
 
         from grpc_health.v1 import health_pb2
         from grpc_health.v1 import health_pb2_grpc
@@ -64,6 +67,28 @@ class GrpcGraphClient:
                 )
             )
         return candidates
+
+    @resilient_call()
+    async def put_vertex(self, tenant_id: str, node_id: int, properties: dict[str, str]) -> bool:
+        request = storage_pb2.PutVertexRequest(node_id=node_id, properties=properties)
+        try:
+            response = await self._storage_stub.PutVertex(request, metadata=(("tenant-id", tenant_id),))
+            return response.success
+        except grpc.aio.AioRpcError as e:
+            if e.code() in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED):
+                raise ConnectionError(f"gRPC connection error: {e.code().name}") from e
+            raise
+
+    @resilient_call()
+    async def put_edge(self, tenant_id: str, source_id: int, target_id: int, properties: dict[str, str]) -> bool:
+        request = storage_pb2.PutEdgeRequest(source_id=source_id, target_id=target_id, properties=properties)
+        try:
+            response = await self._storage_stub.PutEdge(request, metadata=(("tenant-id", tenant_id),))
+            return response.success
+        except grpc.aio.AioRpcError as e:
+            if e.code() in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED):
+                raise ConnectionError(f"gRPC connection error: {e.code().name}") from e
+            raise
 
     async def close(self):
         await self._channel.close()

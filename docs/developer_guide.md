@@ -9,7 +9,7 @@ SAPiola is a polyglot system requiring several runtimes. Ensure you have the fol
 2. **Go:** 1.21+. Required for `sap-cdc-core`.
 3. **Python:** 3.12+. We recommend using `uv` for lightning-fast environment management. Required for `sap-ai-gateway` and `tools/salt_importer`.
 4. **Node.js & npm:** 18+. Required for the `sapiola-mcp` wrapper.
-5. **Docker & Docker Compose:** Required to run the Kafka/Redpanda broker and the PuppyGraph database locally.
+5. **Docker & Docker Compose:** Required to run the Kafka/Redpanda broker locally for streaming.
 
 ## Running the Local Stack
 
@@ -23,9 +23,9 @@ docker-compose up -d
 The graph layer must be running for both ingestion and querying to work.
 ```bash
 cd sap-graph-layer
-cargo run --release
+GRAPH_SERVER_LISTEN_ADDR="127.0.0.1:50053" cargo run --release
 ```
-*(This will bind the GraphServiceServer to port 50051 by default).*
+*(This will bind the GraphServiceServer to port 50053).*
 
 ### 3. Start the Ingestion Gateway (Rust/Go)
 If you are testing against mock data, run the streaming gateway.
