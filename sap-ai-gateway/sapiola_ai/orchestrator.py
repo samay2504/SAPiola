@@ -139,6 +139,10 @@ class RagOrchestrator:
         self._rbac = rbac or SimpleRbacPolicy()
         self._embedding_client = embedding_client
 
+    async def close(self) -> None:
+        if hasattr(self._graph_client, "close"):
+            await self._graph_client.close()
+
     async def answer(self, query: str, principal: Principal, enable_embeddings: bool = False) -> RagResult:
         request_id = str(uuid.uuid4())
         structlog.contextvars.bind_contextvars(request_id=request_id, principal_name=principal.name)

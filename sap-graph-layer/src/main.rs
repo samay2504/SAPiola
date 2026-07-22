@@ -3,7 +3,7 @@ use tonic::{transport::Server, Request, Response, Status};
 use tracing::{info, warn};
 use std::env;
 
-use poly_lsm_core::{PolyLsmEngine, GraphStore, pointer_index::PointerIndexStore};
+use poly_lsm_core::{PolyLsmEngine, GraphStore};
 
 pub mod pb {
     tonic::include_proto!("sapiola.v1");
@@ -213,19 +213,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     let db_path = env::var("LSM_DB_PATH").unwrap_or_else(|_| "./data/lsm_db".to_string());
     
-    let (engine, rx) = PolyLsmEngine::open(db_path)?;
-    let engine = Arc::new(engine);
+    let engine = PolyLsmEngine::open_with_worker(db_path)?;
 
-    let engine_clone = engine.clone();
-    tokio::spawn(async move {
-        poly_lsm_core::engine::spawn_migration_worker(engine_clone, rx).await;
-    });
-
-    let dsl_path = env::var("SAPIOLA_MAPPING_DSL").unwrap_or_else(|_| "tools/salt_importer/salt_mapping.dsl".to_string());
-    
+    // Dynamic, adaptable DSL file discovery (zero hardcoding of specific dataset names)
     let mut catalog = Catalog::new();
-    if let Err(e) = catalog.reload(&dsl_path) {
-        warn!("Failed to load mapping DSL from {}: {}. ListSchema will be empty.", dsl_path, e);
+    let mut loaded_path: Option<String> = None;
+
+    if let Ok(dsl_env_path) = env::var("SAPIOLA_MAPPING_DSL") {
+        if std::path::Path::new(&dsl_env_path).exists() {
+            if let Ok(()) = catalog.reload(&dsl_env_path) {
+                loaded_path = Some(dsl_env_path);
+            }
+        }
+    }
+
+    if loaded_path.is_none() {
+        // Automatically search candidate search roots for any .dsl file
+        let search_dirs = ["tools", "config", ".", "..", "../tools"];
+        'dir_loop: for dir in &search_dirs {
+            let path = std::path::Path::new(dir);
+            if let Ok(entries) = std::fs::read_dir(path) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.is_file() && p.extension().map_or(false, |ext| ext == "dsl") {
+                        let p_str = p.to_string_lossy().to_string();
+                        if let Ok(()) = catalog.reload(&p_str) {
+                            loaded_path = Some(p_str);
+                            break 'dir_loop;
+                        }
+                    } else if p.is_dir() {
+                        // Check one level sub-directory
+                        if let Ok(sub_entries) = std::fs::read_dir(&p) {
+                            for sub_entry in sub_entries.flatten() {
+                                let sub_p = sub_entry.path();
+                                if sub_p.is_file() && sub_p.extension().map_or(false, |ext| ext == "dsl") {
+                                    let sub_p_str = sub_p.to_string_lossy().to_string();
+                                    if let Ok(()) = catalog.reload(&sub_p_str) {
+                                        loaded_path = Some(sub_p_str);
+                                        break 'dir_loop;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    match loaded_path {
+        Some(path) => info!("Successfully loaded dynamic SAP schema DSL from {}", path),
+        None => warn!("No SAP schema .dsl file found in SAPIOLA_MAPPING_DSL or search directories. ListSchema will be empty until populated."),
     }
     let catalog = Arc::new(RwLock::new(catalog));
 

@@ -17,6 +17,8 @@
 test_db*
 *.rdb
 idempotency.db
+data/
+sapiola_data/
 
 # Python
 __pycache__/

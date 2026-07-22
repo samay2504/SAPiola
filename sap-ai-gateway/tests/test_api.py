@@ -24,11 +24,11 @@ def test_answer_endpoint_success(mock_orchestrator):
     
     assert response.status_code == 200
     assert response.json() == {"answer": "SAP Hana answer", "degraded": False}
-    mock_orchestrator.answer.assert_called_once_with(
-        question="What is the vendor name?", 
-        tenant_id="tenant123", 
-        enable_embeddings=None
-    )
+    mock_orchestrator.answer.assert_called_once()
+    call_args = mock_orchestrator.answer.call_args
+    assert call_args.kwargs["query"] == "What is the vendor name?"
+    assert call_args.kwargs["principal"].name == "tenant123"
+    assert call_args.kwargs["enable_embeddings"] is False
 
 def test_answer_endpoint_degraded(mock_orchestrator):
     mock_orchestrator.answer.return_value = RagResult(domain="sales", prompt="q", answer="I couldn't contact the LLM. Relevant data is: ...", degraded=True)

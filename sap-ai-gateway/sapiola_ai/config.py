@@ -16,6 +16,6 @@ class SapiolaConfig(BaseSettings):
 
     # Local infra
     lancedb_path: str = "./sapiola_data/embeddings"
-    graph_grpc_target: str = "localhost:50051"
+    graph_grpc_target: str = "localhost:50053"
 
     model_config = SettingsConfigDict(env_prefix="SAPIOLA_", env_file=".env", extra="ignore")

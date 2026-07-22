@@ -1,29 +1,32 @@
 package kafka
 
 import (
+	"context"
 	"fmt"
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
-    cdcpb "github.com/sapiola/sap-cdc-core/gen/proto/sapiola/v1"
+	"time"
+
+	cdcpb "github.com/sapiola/sap-cdc-core/gen/proto/sapiola/v1"
+	kafkago "github.com/segmentio/kafka-go"
 	"google.golang.org/protobuf/proto"
 )
 
 type Producer struct {
-	p     *kafka.Producer
+	w     *kafkago.Writer
 	topic string
 }
 
 func NewProducer(brokers string, topic string) (*Producer, error) {
-	p, err := kafka.NewProducer(&kafka.ConfigMap{
-		"bootstrap.servers": brokers,
-		"acks":              "all",
-		"enable.idempotence": true,
-	})
-	if err != nil {
-		return nil, err
+	w := &kafkago.Writer{
+		Addr:         kafkago.TCP(brokers),
+		Topic:        topic,
+		Balancer:     &kafkago.Hash{},
+		RequiredAcks: kafkago.RequireAll,
+		Async:        false,
+		WriteTimeout: 10 * time.Second,
 	}
 
 	return &Producer{
-		p:     p,
+		w:     w,
 		topic: topic,
 	}, nil
 }
@@ -35,36 +38,27 @@ func (p *Producer) Produce(pbEvent *cdcpb.CdcEvent) error {
 		return fmt.Errorf("failed to marshal proto: %w", err)
 	}
 
-	deliveryChan := make(chan kafka.Event)
-	defer close(deliveryChan)
+	partitionKey := fmt.Sprintf("%s|%s", pbEvent.Table, pbEvent.PrimaryKey)
 
-    partitionKey := fmt.Sprintf("%s|%s", pbEvent.Table, pbEvent.PrimaryKey)
-
-	msg := &kafka.Message{
-		TopicPartition: kafka.TopicPartition{Topic: &p.topic, Partition: kafka.PartitionAny},
-		Key:            []byte(partitionKey),
-		Value:          data,
+	msg := kafkago.Message{
+		Key:   []byte(partitionKey),
+		Value: data,
+		Time:  time.Now(),
 	}
 
-	err = p.p.Produce(msg, deliveryChan)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err = p.w.WriteMessages(ctx, msg)
 	if err != nil {
 		return fmt.Errorf("failed to produce message: %w", err)
-	}
-
-	ev := <-deliveryChan
-	switch evResult := ev.(type) {
-	case *kafka.Message:
-		if evResult.TopicPartition.Error != nil {
-			return fmt.Errorf("delivery failed: %v", evResult.TopicPartition.Error)
-		}
-	default:
-		return fmt.Errorf("ignored event: %v", evResult)
 	}
 
 	return nil
 }
 
 func (p *Producer) Close() {
-	p.p.Flush(15 * 1000)
-	p.p.Close()
+	if p.w != nil {
+		_ = p.w.Close()
+	}
 }

@@ -373,7 +373,7 @@ impl ServerHandler for SapMcpServer {}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let graph_url = std::env::var("SAPIOLA_GRAPH_URL").unwrap_or_else(|_| "http://[::1]:50051".to_string());
+    let graph_url = std::env::var("SAPIOLA_GRAPH_URL").unwrap_or_else(|_| "http://127.0.0.1:50053".to_string());
     let rag_url = std::env::var("SAPIOLA_RAG_URL").unwrap_or_else(|_| "http://127.0.0.1:8000".to_string());
 
     // Connect gRPC

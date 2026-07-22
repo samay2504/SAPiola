@@ -124,7 +124,7 @@ def generate_dsl(dfs: Dict[str, pd.DataFrame], unique_cols: Dict[str, List[str]]
         elif "party" in source_col.lower():
             edge_name = f"HasParty_{source_col}"
             
-        dsl.append(f"EDGE {edge_name} FROM {source} USING {source_col}")
+        dsl.append(f"EDGE {edge_name} FROM {source} USING {source_col} -> {target_col}")
         dsl.append(f"//   -> targets {target}({target_col}) [Confidence: {fk['confidence']*100}%]")
         
     return "\n".join(dsl)

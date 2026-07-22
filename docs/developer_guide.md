@@ -1,85 +1,177 @@
-# SAPiola Developer Guide
+# SAPiola Developer & Operations Guide (Cross-Platform)
 
-This guide provides instructions for onboarding developers to the SAPiola Zero-ETL monorepo. It covers environment setup, running the local stack, and contributing to the polyglot services.
+This guide provides onboarding, architecture, and operational instructions for developers building with or deploying SAPiola across **Windows**, **Linux**, and **macOS**.
 
-## Environment Setup
+---
 
-SAPiola is a polyglot system requiring several runtimes. Ensure you have the following installed:
-1. **Rust (Cargo):** Latest stable release (1.75+). Required for `sap-graph-layer`, `sap-streaming-gateway`, `poly-lsm-core`, and `sap-mcp-server`.
-2. **Go:** 1.21+. Required for `sap-cdc-core`.
-3. **Python:** 3.12+. We recommend using `uv` for lightning-fast environment management. Required for `sap-ai-gateway` and `tools/salt_importer`.
-4. **Node.js & npm:** 18+. Required for the `sapiola-mcp` wrapper.
-5. **Docker & Docker Compose:** Required to run the Kafka/Redpanda broker locally for streaming.
+## 1. Prerequisites & Toolchain Setup
 
-## Running the Local Stack
+### Polyglot Requirements:
+1. **Rust (1.75+)**: Core storage (`poly-lsm-core`), gRPC server (`sap-graph-layer`), MCP server (`sap-mcp-server`), and streaming gateway (`sap-streaming-gateway`).
+2. **Go (1.21+)**: Pure-Go (`CGO_ENABLED=0`) CDC event pipeline (`sap-cdc-core`).
+3. **Python (3.12+)**: RAG orchestrator (`sap-ai-gateway`) and schema introspector (`tools/salt_importer`).
+4. **Node.js (18+) & npm**: MCP client wrapper (`sapiola-mcp`).
+5. **Docker & Docker Compose**: Streaming infrastructure (`Redpanda` / `Kafka`).
 
-### 1. Start Core Infrastructure
-You will need a Kafka or Redpanda broker running to handle CDC event routing. (Assumes a standard `docker-compose.yml` at the root).
-```bash
-docker-compose up -d
+---
+
+## 2. Environment Variables & PATH per Operating System
+
+### Windows (PowerShell):
+```powershell
+# Add Rust and MinGW binaries to PATH for compilation
+$env:Path += ";$env:USERPROFILE\.cargo\bin;C:\msys64\mingw64\bin"
+
+# Set core service ports and configurations
+$env:GRAPH_SERVER_LISTEN_ADDR="127.0.0.1:50053"
+$env:SAPIOLA_GRAPH_URL="http://127.0.0.1:50053"
+$env:SAPIOLA_MAPPING_DSL="tools\salt_importer\salt_mapping.dsl"
 ```
 
-### 2. Start the SAP Graph Layer (Rust)
-The graph layer must be running for both ingestion and querying to work.
+### Linux / macOS (Bash / Zsh):
 ```bash
-cd sap-graph-layer
-GRAPH_SERVER_LISTEN_ADDR="127.0.0.1:50053" cargo run --release
-```
-*(This will bind the GraphServiceServer to port 50053).*
+# Add Rust binaries to PATH
+export PATH="$HOME/.cargo/bin:$PATH"
 
-### 3. Start the Ingestion Gateway (Rust/Go)
-If you are testing against mock data, run the streaming gateway.
-```bash
-cd sap-streaming-gateway
-cargo run
+# Set core service ports and configurations
+export GRAPH_SERVER_LISTEN_ADDR="127.0.0.1:50053"
+export SAPIOLA_GRAPH_URL="http://127.0.0.1:50053"
+export SAPIOLA_MAPPING_DSL="tools/salt_importer/salt_mapping.dsl"
 ```
 
-### 4. Run the SALT Data Importer (Python)
-Instead of a live HANA instance, stream the mock dataset:
-```bash
-cd tools/salt_importer
-python importer.py
+---
+
+## 3. Generic SAP HANA Data Ingestion (Non-SALT)
+
+SAPiola is 100% schema-agnostic. While the SALT dataset is provided as a test fixture, you can ingest **any** live SAP ERP or SAP HANA database using the following workflow:
+
+```
+[SAP HANA Database]
+   │ (SLT / DB Triggers on INSERT, UPDATE, DELETE)
+   ▼
+[sap-cdc-core (Go)]
+   │ (Serializes row mutation into binary CdcEvent Protobuf)
+   ▼
+[Redpanda / Kafka Cluster]
+   │ (Business-key partitioned stream with guaranteed idempotency)
+   ▼
+[sap-streaming-gateway (Rust)]
+   │ (Consumes Kafka stream via rskafka)
+   ▼
+[poly-lsm-core (Fjall Storage Engine)]
 ```
 
-### 5. Start the AI Gateway (Python)
-Ensure you have set the `SAPIOLA_GEMINI_API_KEY` (or your preferred Litellm key) in `sap-ai-gateway/.env`.
+### Step 1: Introspect your SAP HANA Database
+Use `HanaIntrospector` or `introspector.py` to query SAP HANA metadata tables (`SYS.TABLE_COLUMNS` & `SYS.REFERENTIAL_CONSTRAINTS`):
+
 ```bash
-cd sap-ai-gateway
-uv sync
-# Activate virtual environment if needed
-uvicorn sapiola_ai.api:app --host 0.0.0.0 --port 8000 --reload
+# Set your SAP HANA connection string or dump metadata to pandas
+python tools/salt_importer/introspector.py --hana-host <HANA_IP> --hana-port 30015 --user SYSTEM
+```
+This automatically computes foreign key value-overlap confidence and generates a draft mapping DSL file (`custom_mapping.dsl`).
+
+### Step 2: Automated DSL Generation & LLM Verification (`custom_mapping.dsl`)
+> **Fully Automated & LLM-Verifiable**: You do **NOT** need to write `.dsl` files by hand. 
+> 1. `introspector.py` automatically generates the complete `custom_mapping.dsl` based on empirical primary key and foreign key confidence scores.
+> 2. The attached **LLM Agent** (via `sap-ai-gateway` or MCP server) can automatically inspect the auto-generated `.dsl` file, refine default relationship labels (e.g., renaming `RefersTo_T001W` to human-friendly `LocatedAtPlant`), verify Pest grammar rules, and update the file automatically.
+
+```dsl
+// AUTO-GENERATED & LLM-VERIFIED MAPPING DSL
+NODE Plant FROM T001W WITH id = WERKS
+NODE StorageLocation FROM T001L WITH id = LGORT
+
+EDGE LocatedAtPlant FROM T001L USING WERKS -> WERKS
+//   -> targets T001W(WERKS) [Confidence: 100.0%]
 ```
 
-## Adding a New SAP Domain
+### Step 3: Stream Live CDC Events into SAPiola (`sap-cdc-core`)
+In production, deploy `sap-cdc-core` alongside SAP SLT or database triggers. It serializes SAP HANA table mutations into `CdcEvent` Protobuf streams and publishes to Redpanda/Kafka.
 
-SAP is massive. To add support for a new SAP Domain (e.g., `HR` or `Logistics`):
+`sap-streaming-gateway` consumes these events and updates `poly-lsm-core` live without ETL downtime.
 
-1. **Update `salt_mapping.dsl`:**
-   Navigate to `tools/salt_importer/salt_mapping.dsl` and define the extraction rules for your new table. Ensure the primary key maps correctly to the 7th block (`parts[7]`) per the DSL parser.
+> **Note on SAP HANA Licensing**: No free public SAP HANA Cloud database exists open to the internet due to enterprise licensing. For local offline testing without an enterprise SAP license, `tools/salt_importer/importer.py` acts as a high-fidelity **CDC Stream Emulator**, converting dataset rows into `CdcEvent` Protobuf streams.
 
-2. **Update the AI Domain Classifier:**
-   Open `sap-ai-gateway/sapiola_ai/orchestrator.py` and add your keyword mapping to the `DomainClassifier` rules.
-   ```python
-   _rules: tuple[tuple[str, str], ...] = (
-       # ... existing rules ...
-       ("employee", "hr"),
-       ("payroll", "hr"),
-   )
-   ```
+---
 
-3. **Verify RBAC Policies:**
-   Ensure that the `SimpleRbacPolicy` or your external IAM is aware of the new `hr` domain so it doesn't default to a `403 Forbidden`.
+## 4. Garbage Collection, Compaction & Idle System Standards
 
-## Testing
+1. **LSM Compaction & Garbage Collection**:
+   - `poly-lsm-core` uses the **Fjall LSM-tree engine**.
+   - Updated or deleted vertices/edges write tombstone records to memtables.
+   - The background worker task (`PolyLsmEngine::open_with_worker`) runs **Leveled / Tiered Compaction** continuously in the background, merging SSTables and purging obsolete tombstones to free disk space automatically.
 
-### End-to-End Verification
-We have provided an E2E testing script that simulates LLM queries against the RAG orchestrator, testing both happy paths and RBAC rejection paths.
-```bash
-python scratch/verify_e2e.py
+2. **Idle Resource Optimization**:
+   - **Memtable Flush**: Uncommitted write buffers in RAM auto-flush to disk after an idle timeout.
+   - **Zero-Copy Mmap**: Disk SSTables use memory mapping (`mmap`), reducing idle RAM consumption to minimal block caches (QuickCache).
+   - **Idle TCP Keep-Alive**: gRPC channels in `sap-mcp-server` and `sap-ai-gateway` enter TCP keep-alive wait with 0% CPU consumption.
+
+---
+
+## 5. Multi-LLM Provider Support Configuration
+
+`sap-ai-gateway` uses `LiteLlmClient` (`litellm`), supporting **100+ LLM providers** out of the box with zero code changes.
+
+To swap LLMs, simply update `sap-ai-gateway/.env`:
+
+| Provider | `SAPIOLA_LLM_MODEL` in `.env` | Required API Key / Base in `.env` |
+|---|---|---|
+| **Google Gemini** | `gemini/gemini-2.5-flash` | `SAPIOLA_LLM_API_KEY=AIzaSy...` |
+| **OpenAI** | `gpt-4o` or `gpt-4o-mini` | `SAPIOLA_LLM_API_KEY=sk-...` |
+| **Anthropic** | `claude-3-5-sonnet-20241022` | `SAPIOLA_LLM_API_KEY=sk-ant-...` |
+| **Groq (Fast Llama 3)** | `groq/llama-3.3-70b-versatile` | `SAPIOLA_LLM_API_KEY=gsk_...` |
+| **DeepSeek** | `deepseek/deepseek-chat` | `SAPIOLA_LLM_API_KEY=sk-...` |
+| **Local Ollama** | `ollama/llama3` | `SAPIOLA_LLM_API_BASE=http://localhost:11434` |
+
+---
+
+## 6. MCP Server Deployment & Integration
+
+To connect SAPiola to external AI agent frameworks (e.g. Claude Desktop, AGY, VS Code MCP extensions):
+
+### Stdio Transport Configuration (`claude_desktop_config.json`):
+
+#### Windows:
+```json
+{
+  "mcpServers": {
+    "sapiola": {
+      "command": "node",
+      "args": ["C:/path/to/SAPiola/sapiola-mcp/bin/run.js"],
+      "env": {
+        "SAPIOLA_GRAPH_URL": "http://127.0.0.1:50053",
+        "SAPIOLA_PRINCIPAL": "alice"
+      }
+    }
+  }
+}
 ```
 
-### Rust Unit Tests
-To run tests across all Rust crates:
-```bash
-cargo test --workspace
+#### Linux / macOS:
+```json
+{
+  "mcpServers": {
+    "sapiola": {
+      "command": "node",
+      "args": ["/path/to/SAPiola/sapiola-mcp/bin/run.js"],
+      "env": {
+        "SAPIOLA_GRAPH_URL": "http://127.0.0.1:50053",
+        "SAPIOLA_PRINCIPAL": "alice"
+      }
+    }
+  }
+}
 ```
+
+---
+
+## 7. Understanding DSL Path Resolution
+
+If you observe the following warning at startup:
+```text
+WARN sap_graph_layer: No SAP schema .dsl file found in SAPIOLA_MAPPING_DSL or search directories.
+```
+
+### Resolution:
+`sap-graph-layer` automatically checks candidate paths:
+1. Environment variable `SAPIOLA_MAPPING_DSL`
+2. `tools/salt_importer/salt_mapping.dsl` or any `.dsl` file in `tools/`, `config/`, `.`, or `..`

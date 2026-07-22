@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Optional
 import uvicorn
 
-app = FastAPI(title="SAPiola AI Gateway")
+from contextlib import asynccontextmanager
 
 class AnswerRequest(BaseModel):
     query: str
@@ -25,14 +25,19 @@ class WriteEdgeRequest(BaseModel):
     target_id: int
     properties: dict[str, str]
 
-# Global orchestrator instance initialized on startup
-orchestrator: RagOrchestrator = None
+# Global orchestrator instance initialized on startup via lifespan
+orchestrator: RagOrchestrator | None = None
 
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     global orchestrator
-    # Note: connect() sets up LLM, Embeddings, and Graph clients automatically
     orchestrator = await Sapiola.connect()
+    yield
+    if orchestrator:
+        await orchestrator.close()
+    orchestrator = None
+
+app = FastAPI(title="SAPiola AI Gateway", lifespan=lifespan)
 
 @app.post("/answer")
 async def answer_endpoint(request: AnswerRequest):

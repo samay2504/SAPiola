@@ -1,14 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Stage 1: Build the Go CDC agent
-FROM golang:bookworm AS builder
-
-# Add build tools required by confluent-kafka-go (needs CGO)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libc6-dev \
-    pkg-config \
-    && rm -rf /var/lib/apt/lists/*
+FROM golang:alpine AS builder
 
 WORKDIR /app
 
@@ -19,8 +12,8 @@ RUN go mod download
 # Copy the rest of the source code
 COPY . .
 
-# Build the binary with CGO enabled (required by confluent-kafka-go)
-RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-w -s" -o /cdc-agent ./cmd/cdc-agent
+# Build the binary with CGO disabled (pure Go)
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /cdc-agent ./cmd/cdc-agent
 
 # Stage 2: Create the minimal production image
 FROM debian:bookworm-slim

@@ -1,88 +1,125 @@
-# SAPiola Command & CLI Reference
+# SAPiola Command & CLI Reference (Cross-Platform)
 
-This document provides a quick reference for the various CLI commands and scripts used to operate the SAPiola platform.
+This document provides a comprehensive reference for CLI commands across **Windows (PowerShell)** and **Linux / macOS (Bash / Zsh)**.
 
-## 1. Mock Data Importer (`tools/salt_importer`)
+---
 
-The Python importer streams mock SALT data into the SAPiola ingest gateway.
+## 1. Environment & Prerequisites Quick Reference
 
-**Location:** `tools/salt_importer/`
+| OS | Shell | Toolchain Setup / PATH Adjustments |
+|---|---|---|
+| **Windows** | PowerShell | `$env:Path += ";$env:USERPROFILE\.cargo\bin;C:\msys64\mingw64\bin"` |
+| **Linux** | Bash/Zsh | `export PATH="$HOME/.cargo/bin:$PATH"` |
+| **macOS** | Zsh | `export PATH="$HOME/.cargo/bin:$PATH"` |
 
-**Basic Usage:**
+---
+
+## 2. SAP Graph Layer (`sap-graph-layer`)
+
+The core high-performance gRPC graph storage and query engine.
+
+### Linux / macOS (Bash):
 ```bash
-python importer.py
-```
-*Note: This requires `sap-streaming-gateway` (or `sap-cdc-core`) to be actively listening on `localhost:50053`, otherwise the gRPC connection will refuse.*
-
-## 2. SAP AI Gateway (`sap-ai-gateway`)
-
-The FastAPI-based Generative AI orchestration layer.
-
-**Location:** `sap-ai-gateway/`
-
-**Environment Variables Required:**
-- `SAPIOLA_GEMINI_API_KEY` (or other litellm provider keys)
-- `SAPIOLA_GRAPH_URL` (defaults to `http://[::1]:50051`, but should be `http://127.0.0.1:50053` for local setup)
-
-**Run Development Server:**
-```bash
-# Using uvicorn with hot-reload
-uvicorn sapiola_ai.api:app --host 0.0.0.0 --port 8000 --reload
+export GRAPH_SERVER_LISTEN_ADDR="127.0.0.1:50053"
+export SAPIOLA_MAPPING_DSL="tools/salt_importer/salt_mapping.dsl"
+cargo run --release -p sap-graph-layer
 ```
 
-**Testing:**
-```bash
-pytest tests/
+### Windows (PowerShell):
+```powershell
+$env:Path += ";$env:USERPROFILE\.cargo\bin;C:\msys64\mingw64\bin"
+$env:GRAPH_SERVER_LISTEN_ADDR="127.0.0.1:50053"
+$env:SAPIOLA_MAPPING_DSL="tools\salt_importer\salt_mapping.dsl"
+cargo run --release -p sap-graph-layer
 ```
+
+---
 
 ## 3. SAP MCP Server (`sap-mcp-server` & `sapiola-mcp`)
 
-The Model Context Protocol integration allows external AI agents to query the graph.
+Model Context Protocol server for AI agent integration.
 
-### Rust Backend (`sap-mcp-server`)
-**Location:** `sap-mcp-server/`
+### Rust Native Server (`sap-mcp-server`)
 
-**Build Release Binary:**
+#### Linux / macOS:
 ```bash
-cargo build --release -p sap-mcp-server
+export SAPIOLA_GRAPH_URL="http://127.0.0.1:50053"
+cargo run --release -p sap-mcp-server
 ```
 
-**Run Directly (Stdio Transport):**
-```bash
+#### Windows (PowerShell):
+```powershell
+$env:Path += ";$env:USERPROFILE\.cargo\bin;C:\msys64\mingw64\bin"
+$env:SAPIOLA_GRAPH_URL="http://127.0.0.1:50053"
 cargo run --release -p sap-mcp-server
 ```
 
 ### Node.js Wrapper (`sapiola-mcp`)
-**Location:** `sapiola-mcp/`
 
-The Node.js wrapper acts as a bridge for MCP clients (like Claude Desktop) that expect standard `npm` modules.
-
-**Install Dependencies:**
+#### Install & Build (All Platforms):
 ```bash
+cd sapiola-mcp
 npm install
 ```
-*Note: The `postinstall` script (`scripts/fetch-binary.js`) will attempt to download a pre-built binary. If it fails, it will loudly log a warning and fallback to executing `cargo build --release` from the Rust workspace.*
 
-**Force Developer Fallback Build:**
-```bash
-SAPIOLA_MCP_DEV_BUILD=1 npm install
-```
+#### Dev Fallback Build:
+- **Linux/macOS:** `SAPIOLA_MCP_DEV_BUILD=1 npm install`
+- **Windows (PowerShell):** `$env:SAPIOLA_MCP_DEV_BUILD="1"; npm install`
 
-**Run the MCP Server:**
+#### Run Server:
 ```bash
 node bin/run.js
 ```
 
-## 4. Rust Backend Services (`sap-graph-layer` & `sap-streaming-gateway`)
+---
 
-**Start Graph Layer:**
+## 4. SAP AI Gateway (`sap-ai-gateway`)
+
+FastAPI RAG orchestration gateway.
+
+### Linux / macOS:
 ```bash
-cd sap-graph-layer
-cargo run --release
+cd sap-ai-gateway
+export SAPIOLA_GEMINI_API_KEY="your_api_key_here"
+export SAPIOLA_GRAPH_URL="http://127.0.0.1:50053"
+uv sync
+uvicorn sapiola_ai.api:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-**Start Streaming Gateway:**
-```bash
-cd sap-streaming-gateway
-cargo run --release
+### Windows (PowerShell):
+```powershell
+cd sap-ai-gateway
+$env:SAPIOLA_GEMINI_API_KEY="your_api_key_here"
+$env:SAPIOLA_GRAPH_URL="http://127.0.0.1:50053"
+uv sync
+uvicorn sapiola_ai.api:app --host 0.0.0.0 --port 8000 --reload
 ```
+
+---
+
+## 5. Streaming Ingestion Gateway (`sap-streaming-gateway` & `sap-cdc-core`)
+
+### Go CDC Producer (`sap-cdc-core`):
+```bash
+cd sap-cdc-core
+CGO_ENABLED=0 go test ./...
+CGO_ENABLED=0 go build -o cdc_producer ./cmd/producer
+```
+
+### Docker Container Setup:
+```bash
+docker compose up -d redpanda
+docker build -t sapiola-cdc ./sap-cdc-core
+```
+
+---
+
+## 6. Testing & Benchmarking Scripts
+
+| Script | Purpose | Execution Command |
+|---|---|---|
+| `tools/test_generality_schema.py` | Synthetic non-SALT 5-hop FK test | `python tools/test_generality_schema.py` |
+| `tools/salt_importer/test_hana_introspector.py` | SAP HANA catalog introspector test | `python tools/salt_importer/test_hana_introspector.py` |
+| `tools/populate_hub.py` | Populate Hub-Spoke graph test nodes | `python tools/populate_hub.py` |
+| `scratch/soak_test.py` | Telemetry & write soak test | `python scratch/soak_test.py --duration 60` |
+| `scratch/mcp_client_test.mjs` | E2E MCP tool protocol test | `node scratch/mcp_client_test.mjs` |

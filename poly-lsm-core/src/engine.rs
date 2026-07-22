@@ -111,6 +111,16 @@ impl PolyLsmEngine {
         Ok((engine, rx))
     }
 
+    pub fn open_with_worker(db_path: impl AsRef<Path>) -> Result<Arc<Self>> {
+        let (engine, rx) = Self::open(db_path)?;
+        let engine = Arc::new(engine);
+        let engine_clone = engine.clone();
+        tokio::spawn(async move {
+            spawn_migration_worker(engine_clone, rx).await;
+        });
+        Ok(engine)
+    }
+
     pub fn telemetry(&self) -> &Telemetry {
         &self.telemetry
     }
