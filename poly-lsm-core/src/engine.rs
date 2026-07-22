@@ -359,8 +359,50 @@ impl GraphStore for PolyLsmEngine {
         Ok(())
     }
 
-    fn delete_edge(&self, _tenant_id: &str, _src: NodeId, _dst: NodeId) -> Result<()> {
-        // Obsolete in this benchmark. Would be implemented with blind delta writes.
+    fn delete_edge(&self, tenant_id: &str, src: NodeId, dst: NodeId) -> Result<()> {
+        let mut batch = self.db.batch();
+
+        // 1. Remove edge properties
+        let edge_key = TenantScopedKey::new(tenant_id, &Self::encode_edge_key(src, dst)).encode();
+        batch.remove(&self.eprop_val, edge_key);
+
+        // 2. Scan and remove out-topology keys (dir = 0)
+        let start_out = TenantScopedKey::new(tenant_id, &Self::encode_topology_edge_key(src, 0, 1)).encode();
+        let end_out = TenantScopedKey::new(tenant_id, &Self::encode_topology_edge_key(src, 0, u64::MAX)).encode();
+        let mut out_keys = Vec::new();
+        for item in self.topology.range(start_out..=end_out) {
+            let (k, v) = item.into_inner().unwrap();
+            if v.len() == 8 {
+                let mut target_buf = [0u8; 8];
+                target_buf.copy_from_slice(&v);
+                if i64::from_be_bytes(target_buf) == dst {
+                    out_keys.push(k);
+                }
+            }
+        }
+        for k in out_keys {
+            batch.remove(&self.topology, k);
+        }
+
+        // 3. Scan and remove in-topology keys (dir = 1)
+        let start_in = TenantScopedKey::new(tenant_id, &Self::encode_topology_edge_key(dst, 1, 1)).encode();
+        let end_in = TenantScopedKey::new(tenant_id, &Self::encode_topology_edge_key(dst, 1, u64::MAX)).encode();
+        let mut in_keys = Vec::new();
+        for item in self.topology.range(start_in..=end_in) {
+            let (k, v) = item.into_inner().unwrap();
+            if v.len() == 8 {
+                let mut target_buf = [0u8; 8];
+                target_buf.copy_from_slice(&v);
+                if i64::from_be_bytes(target_buf) == src {
+                    in_keys.push(k);
+                }
+            }
+        }
+        for k in in_keys {
+            batch.remove(&self.topology, k);
+        }
+
+        batch.commit()?;
         Ok(())
     }
 
@@ -421,16 +463,32 @@ impl GraphStore for PolyLsmEngine {
         }
 
         let sealed = self.degree_counter.get_sealed(tenant_id, id).unwrap_or(0);
-        let start_key = TenantScopedKey::new(tenant_id, &Self::encode_topology_edge_key(id, 0, sealed + 1)).encode();
-        let end_key = TenantScopedKey::new(tenant_id, &Self::encode_topology_edge_key(id, 0, u64::MAX)).encode();
+        
+        // 1. Scan unsealed out-edges (dir = 0)
+        let start_out_key = TenantScopedKey::new(tenant_id, &Self::encode_topology_edge_key(id, 0, sealed + 1)).encode();
+        let end_out_key = TenantScopedKey::new(tenant_id, &Self::encode_topology_edge_key(id, 0, u64::MAX)).encode();
 
-        for item in self.topology.range(start_key..=end_key) {
+        for item in self.topology.range(start_out_key..=end_out_key) {
             let (_, v) = item.into_inner().unwrap();
             found = true;
             if v.len() == 8 {
                 let mut target_buf = [0u8; 8];
                 target_buf.copy_from_slice(&v);
                 edges.add_out_edge(i64::from_be_bytes(target_buf));
+            }
+        }
+
+        // 2. Scan unsealed in-edges (dir = 1)
+        let start_in_key = TenantScopedKey::new(tenant_id, &Self::encode_topology_edge_key(id, 1, 1)).encode();
+        let end_in_key = TenantScopedKey::new(tenant_id, &Self::encode_topology_edge_key(id, 1, u64::MAX)).encode();
+
+        for item in self.topology.range(start_in_key..=end_in_key) {
+            let (_, v) = item.into_inner().unwrap();
+            found = true;
+            if v.len() == 8 {
+                let mut target_buf = [0u8; 8];
+                target_buf.copy_from_slice(&v);
+                edges.add_in_edge(i64::from_be_bytes(target_buf));
             }
         }
 
