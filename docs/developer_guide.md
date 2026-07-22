@@ -175,3 +175,31 @@ WARN sap_graph_layer: No SAP schema .dsl file found in SAPIOLA_MAPPING_DSL or se
 `sap-graph-layer` automatically checks candidate paths:
 1. Environment variable `SAPIOLA_MAPPING_DSL`
 2. `tools/salt_importer/salt_mapping.dsl` or any `.dsl` file in `tools/`, `config/`, `.`, or `..`
+
+---
+
+## 8. Docker Stack Specification & Necessity Breakdown
+
+### Service Inventory (`docker-compose.yml`):
+
+| Container Service Name | Dockerfile / Image Source | Exposed Ports | Primary Purpose |
+|---|---|---|---|
+| **`redpanda`** | `docker.redpanda.com/redpandadata/redpanda:v24.1.2` | `19092`, `18081`, `18082`, `9644` | High-throughput, Kafka-compatible event stream broker. |
+| **`redpanda-init`** | `redpanda:v24.1.2` (One-shot runner) | Internal | Automatically creates the `sap.cdc.events` streaming topic at startup. |
+| **`sap_cdc_agent`** | `./sap-cdc-core/Dockerfile` | Internal | Pure-Go CDC event producer capturing live SAP HANA mutations. |
+| **`sap_ingest_gateway`** | `./sap-cdc-core/Dockerfile.ingest` | `50051:50051` | Ingestion gRPC endpoint receiving streaming batch mutations. |
+| **`sap_streaming_gateway`** | `./sap-streaming-gateway/Dockerfile` | Internal | Rust streaming consumer forwarding Kafka events to the graph layer. |
+| **`sap_graph_server`** | `./sap-graph-layer/Dockerfile` | `50052:50052` / `50053:50053` | Rust gRPC graph storage and query engine (`poly-lsm-core`). |
+
+---
+
+### Is Docker Absolutely Required to Run this MCP?
+
+#### 1. Local Desktop MCP Use (Claude Desktop / Cursor / AGY): **NOT REQUIRED** ❌
+- You do **NOT** need Docker or Docker Compose running to build or use `sapiola-mcp`.
+- **Host Native Run**: You can run `sap-graph-layer` directly on your host machine (`cargo run -p sap-graph-layer`) and run `sapiola-mcp` natively (`node bin/run.js`). The storage engine reads and writes directly to local disk without needing Redpanda or container overhead.
+
+#### 2. Distributed Production Deployment (Cloud / SAP Enterprise CDC): **REQUIRED** ✅
+- Docker Compose / Kubernetes is **REQUIRED** when deploying the full distributed infrastructure across production server clusters.
+- It orchestrates the asynchronous CDC pipeline (`Redpanda` broker + `sap-cdc-core` + `sap-streaming-gateway` + `sap-graph-layer`), enabling zero-downtime streaming updates directly from enterprise SAP landscapes.
+
