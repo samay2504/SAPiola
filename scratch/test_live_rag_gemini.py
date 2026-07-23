@@ -29,11 +29,11 @@ async def main():
     # Priority: SAPIOLA_LLM_API_KEY / SAPIOLA_LLM_API_BASE or User's Unified Proxy Defaults
     api_key = os.environ.get("SAPIOLA_LLM_API_KEY")
     if not api_key or api_key.startswith("AIzaSy"):
-        api_key = "freellmapi-52f2a828232d1a24a854f5cc66f76527d9a8e13bbc83605d"
+        api_key = "freellmapi-da07d76e216773d4faf337ea7383258af5530f20706680da"
 
     api_base = os.environ.get("SAPIOLA_LLM_API_BASE")
     if not api_base:
-        api_base = "http://localhost:3001/v1"
+        api_base = "http://127.0.0.1:31415/v1"
 
     raw_model = os.environ.get("SAPIOLA_LLM_MODEL", "openai/gemini-2.5-flash")
     if not raw_model.startswith("openai/"):

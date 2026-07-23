@@ -3,6 +3,7 @@ module github.com/sapiola/sap-cdc-core
 go 1.25.0
 
 require (
+	github.com/SAP/go-hdb v1.16.12
 	github.com/segmentio/kafka-go v0.4.47
 	github.com/stretchr/testify v1.10.0
 	go.etcd.io/bbolt v1.4.0

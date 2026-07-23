@@ -1,0 +1,32 @@
+{
+  "sales_order": {
+    "vbeln": "DOC-5001",
+    "kunnr": "CUST-9001",
+    "netwr": 12500.0,
+    "waerk": "EUR",
+    "erdat": "2026-07-23"
+  },
+  "customer": {
+    "kunnr": "CUST-9001",
+    "name1": "Siemens Enterprise Automation",
+    "ort01": "Munich"
+  },
+  "items": [
+    {
+      "vbeln": "DOC-5001",
+      "posnr": "000010",
+      "matnr": "MAT-7700",
+      "arktx": "High-Pressure Turbine Valve",
+      "netwr": 8500.0,
+      "kwmeng": 10.0
+    },
+    {
+      "vbeln": "DOC-5001",
+      "posnr": "000020",
+      "matnr": "MAT-8811",
+      "arktx": "Precision Control Module",
+      "netwr": 4000.0,
+      "kwmeng": 5.0
+    }
+  ]
+}
