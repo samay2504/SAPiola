@@ -63,12 +63,22 @@ impl RelationalBackend for HanaBackend {
             Ok(rs) => rs,
             Err(_) => return Ok(vec![]),
         };
+
+        let metadata = result_set.metadata().clone();
+        let col_names: Vec<String> = metadata
+            .iter()
+            .map(|c| c.columnname().to_string())
+            .collect();
+
         let rows = result_set.into_rows().await?;
         let mut results = Vec::new();
         for row in rows {
             let mut obj = Map::new();
             for (idx, field) in row.into_iter().enumerate() {
-                let col_name = format!("col_{}", idx);
+                let col_name = col_names
+                    .get(idx)
+                    .cloned()
+                    .unwrap_or_else(|| format!("col_{}", idx));
                 let json_val = hdb_value_to_json(field);
                 obj.insert(col_name, json_val);
             }
