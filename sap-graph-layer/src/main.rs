@@ -216,19 +216,58 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let engine = PolyLsmEngine::open_with_worker(db_path)?;
 
     // Dynamic, adaptable DSL file discovery (zero hardcoding of specific dataset names)
+    // Priority: 1. SAPIOLA_SCHEMA_MANIFEST (JSON manifest with embedded DSL)
+    //           2. SAPIOLA_MAPPING_DSL (direct DSL file path)
+    //           3. Auto-search for .dsl files in candidate directories
     let mut catalog = Catalog::new();
     let mut loaded_path: Option<String> = None;
 
-    if let Ok(dsl_env_path) = env::var("SAPIOLA_MAPPING_DSL") {
-        if std::path::Path::new(&dsl_env_path).exists() {
-            if let Ok(()) = catalog.reload(&dsl_env_path) {
-                loaded_path = Some(dsl_env_path);
+    // Priority 1: Load from schema_manifest.json
+    if let Ok(manifest_path) = env::var("SAPIOLA_SCHEMA_MANIFEST") {
+        if std::path::Path::new(&manifest_path).exists() {
+            match std::fs::read_to_string(&manifest_path) {
+                Ok(content) => {
+                    // Parse JSON and extract generated_dsl field
+                    if let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&content) {
+                        if let Some(dsl_str) = manifest.get("generated_dsl").and_then(|v| v.as_str()) {
+                            // Strip comment lines before loading
+                            let clean_dsl: String = dsl_str
+                                .lines()
+                                .filter(|line| !line.trim().starts_with("//"))
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            match Catalog::load(&clean_dsl) {
+                                Ok(new_catalog) => {
+                                    catalog = new_catalog;
+                                    loaded_path = Some(format!("manifest:{}", manifest_path));
+                                    // Log fingerprint for operator verification
+                                    if let Some(fp) = manifest.get("fingerprint").and_then(|v| v.as_str()) {
+                                        info!("Schema manifest fingerprint: {}", fp);
+                                    }
+                                }
+                                Err(e) => warn!("Failed to parse DSL from manifest {}: {}", manifest_path, e),
+                            }
+                        }
+                    }
+                }
+                Err(e) => warn!("Failed to read manifest {}: {}", manifest_path, e),
             }
         }
     }
 
+    // Priority 2: Direct DSL file path
     if loaded_path.is_none() {
-        // Automatically search candidate search roots for any .dsl file
+        if let Ok(dsl_env_path) = env::var("SAPIOLA_MAPPING_DSL") {
+            if std::path::Path::new(&dsl_env_path).exists() {
+                if let Ok(()) = catalog.reload(&dsl_env_path) {
+                    loaded_path = Some(dsl_env_path);
+                }
+            }
+        }
+    }
+
+    // Priority 3: Auto-search for .dsl files
+    if loaded_path.is_none() {
         let search_dirs = ["tools", "config", ".", "..", "../tools"];
         'dir_loop: for dir in &search_dirs {
             let path = std::path::Path::new(dir);
@@ -242,7 +281,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             break 'dir_loop;
                         }
                     } else if p.is_dir() {
-                        // Check one level sub-directory
                         if let Ok(sub_entries) = std::fs::read_dir(&p) {
                             for sub_entry in sub_entries.flatten() {
                                 let sub_p = sub_entry.path();
@@ -263,7 +301,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match loaded_path {
         Some(path) => info!("Successfully loaded dynamic SAP schema DSL from {}", path),
-        None => warn!("No SAP schema .dsl file found in SAPIOLA_MAPPING_DSL or search directories. ListSchema will be empty until populated."),
+        None => warn!("No SAP schema .dsl file found in SAPIOLA_SCHEMA_MANIFEST, SAPIOLA_MAPPING_DSL, or search directories. ListSchema will be empty until populated."),
     }
     let catalog = Arc::new(RwLock::new(catalog));
 

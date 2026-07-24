@@ -81,8 +81,9 @@ func TestHanaCDCIntegration(t *testing.T) {
 
 	logger, _ := zap.NewDevelopment()
 	reader := connector.NewSLTReader(db, connector.SLTReaderConfig{
-		Tables:    map[string]string{"MARA": "DBADMIN.MARA_LOG"},
-		BatchSize: 100,
+		Tables:            map[string]string{"MARA": "DBADMIN.MARA_LOG"},
+		PrimaryKeyColumns: map[string][]string{"MARA": {"MATNR"}},
+		BatchSize:         100,
 	}, logger)
 
 	// 3. Read changes from real HANA

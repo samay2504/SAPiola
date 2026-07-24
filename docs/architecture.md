@@ -21,9 +21,9 @@ graph TD
 
 ### 1. Ingestion Layer (`sap-cdc-core` & `sap-streaming-gateway`)
 The ingest layer is responsible for taking raw SAP Change Data Capture (CDC) events and pushing them into our pipeline.
-- **`sap-cdc-core` (Go):** Represents the original CDC agent architecture that can hook directly into SAP's SLT (SAP Landscape Transformation) replication server. It guarantees ordered delivery and exactly-once processing using an idempotency key layer.
-- **`sap-streaming-gateway` (Rust):** The high-throughput dispatcher. It listens for `CdcEvent` protobuf messages (over gRPC).
-- **`tools/salt_importer` (Python):** A mock generator. It uses `salt_mapping.dsl` to translate static `SALT` dataset files into identical `CdcEvent` messages, streaming them into the gateway just like a real SAP system would.
+- **`sap-cdc-core` (Go):** Represents the CDC agent architecture. Reads table monitoring configurations and primary key definitions dynamically from `schema_manifest.json`, with intelligent regex pattern matching (`(?i)(_id|_key|_nr|id|nr|key)$`) as a fallback. Guarantees ordered delivery and idempotency.
+- **`sap-streaming-gateway` (Rust):** The high-throughput dispatcher listening for `CdcEvent` protobuf messages over gRPC.
+- **`tools/salt_importer` (Python):** Unified Schema Discovery & Testing suite (`credential_resolver.py`, `hana_introspector.py`, `introspector.py`, `importer.py`). Generates `schema_manifest.json` via empirical value-overlap foreign key scoring and streams CDC events into the gateway with zero code changes.
 
 ### 2. Embedded Storage Engine (`poly-lsm-core`)
 Instead of bloated property graphs, SAPiola relies on **Fjall**, a Rust-based Log-Structured Merge (LSM) tree database. This single core powers both the graph structural index and the relational property store.
@@ -33,9 +33,9 @@ Instead of bloated property graphs, SAPiola relies on **Fjall**, a Rust-based Lo
 
 ### 3. Graph Engine Layer (`sap-graph-layer`)
 This is the core execution engine of SAPiola.
-- **`planner/cypher.pest` & `cypher_parser.rs`:** We implemented a custom Cypher-subset parser using the Rust `pest` grammar library. This compiles natural graph queries (e.g., `MATCH (n:salesdocument) RETURN n`) into logical execution plans.
-- **`executor/hana.rs` & `backend.rs`:** The `RelationalBackend` trait is a crucial architectural abstraction. It executes the structural queries natively against the `poly-lsm-core`.
-- **`main.rs` (gRPC Server):** Exposes `GraphServiceServer` and `StorageServiceServer`. It receives the structural edge/vertex mappings from the ingest layer and serves graph traversal requests (like bounded BFS) over gRPC.
+- **`planner/cypher.pest` & `cypher_parser.rs`:** Custom Cypher-subset parser using the Rust `pest` grammar library. Compiles graph queries into logical execution plans.
+- **`executor/hana.rs` & `backend.rs`:** Executes structural queries natively against `poly-lsm-core`.
+- **`main.rs` (gRPC Server):** Exposes `GraphServiceServer` and `StorageServiceServer`. Loads schema configurations directly from `schema_manifest.json` (via `SAPIOLA_SCHEMA_MANIFEST`), verifying the SHA-256 fingerprint on startup before serving gRPC graph traversals.
 
 ### 4. Generative AI Layer (`sap-ai-gateway`)
 A Python FastAPI application that provides a unified, hallucination-free AI interface.

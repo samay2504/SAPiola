@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	_ "github.com/SAP/go-hdb/driver"
@@ -11,11 +13,17 @@ import (
 	"go.uber.org/zap"
 )
 
+var (
+	pkExactPattern  = regexp.MustCompile(`(?i)^(id|primary_key|pk|key|guid|uuid)$`)
+	pkSuffixPattern = regexp.MustCompile(`(?i)(_id|_key|_nr|id|nr|key)$`)
+)
+
 type SLTReaderConfig struct {
-	Tables          map[string]string
-	MinPollInterval time.Duration
-	MaxPollInterval time.Duration
-	BatchSize       int
+	Tables            map[string]string
+	PrimaryKeyColumns map[string][]string
+	MinPollInterval   time.Duration
+	MaxPollInterval   time.Duration
+	BatchSize         int
 }
 
 type SLTReader struct {
@@ -47,52 +55,42 @@ func NewSLTReader(db *sql.DB, config SLTReaderConfig, logger *zap.Logger) *SLTRe
 func (r *SLTReader) ReadChanges(ctx context.Context, tableName string, lastLSN int64) ([]event.CdcEvent, error) {
 	loggingTable, ok := r.config.Tables[tableName]
 	if !ok {
-		return nil, nil // No mapping found
+		return nil, fmt.Errorf("table %s not configured for CDC monitoring", tableName)
 	}
 
 	query := fmt.Sprintf("SELECT * FROM %s WHERE LSN > ? ORDER BY LSN ASC LIMIT ?", loggingTable)
 
 	rows, err := r.db.QueryContext(ctx, query, lastLSN, r.config.BatchSize)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to query logging table %s: %w", loggingTable, err)
 	}
 	defer rows.Close()
 
 	cols, err := rows.Columns()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get columns for %s: %w", loggingTable, err)
 	}
 
 	var events []event.CdcEvent
-
 	for rows.Next() {
-		values := make([]interface{}, len(cols))
-		ptrs := make([]interface{}, len(cols))
-		for i := range values {
-			ptrs[i] = &values[i]
+		columnPointers := make([]interface{}, len(cols))
+		columnData := make([]interface{}, len(cols))
+		for i := range columnData {
+			columnPointers[i] = &columnData[i]
 		}
 
-		if err := rows.Scan(ptrs...); err != nil {
-			return nil, err
+		if err := rows.Scan(columnPointers...); err != nil {
+			return nil, fmt.Errorf("failed to scan row: %w", err)
 		}
 
-		colMap := make(map[string]interface{}, len(cols))
-		for i, name := range cols {
-			colMap[name] = values[i]
+		colMap := make(map[string]interface{})
+		for i, colName := range cols {
+			colMap[colName] = columnData[i]
 		}
 
 		var lsn int64
 		if v, ok := colMap["LSN"]; ok && v != nil {
-			switch val := v.(type) {
-			case int64:
-				lsn = val
-			case int32:
-				lsn = int64(val)
-			case int:
-				lsn = int64(val)
-			default:
-				fmt.Sscanf(fmt.Sprintf("%v", val), "%d", &lsn)
-			}
+			fmt.Sscanf(fmt.Sprintf("%v", v), "%d", &lsn)
 		}
 
 		var transType int
@@ -113,13 +111,9 @@ func (r *SLTReader) ReadChanges(ctx context.Context, tableName string, lastLSN i
 		}
 
 		var pk string
-		if v, ok := colMap["MATNR"]; ok && v != nil {
-			pk = stringify(v)
-		} else if v, ok := colMap["EBELN"]; ok && v != nil {
-			pk = stringify(v)
-		} else if v, ok := colMap["PRIMARY_KEY"]; ok && v != nil {
-			pk = stringify(v)
-		} else {
+		pkCols := r.config.PrimaryKeyColumns[tableName]
+		pk = buildCompositeKey(colMap, pkCols)
+		if pk == "" {
 			pk = fmt.Sprintf("%d", lsn)
 		}
 
@@ -159,4 +153,34 @@ func stringify(val interface{}) string {
 	}
 }
 
+func buildCompositeKey(colMap map[string]interface{}, pkCols []string) string {
+	// 1. Explicit manifest configuration (Primary path)
+	if len(pkCols) > 0 {
+		var parts []string
+		for _, col := range pkCols {
+			if v, ok := colMap[col]; ok && v != nil {
+				parts = append(parts, stringify(v))
+			}
+		}
+		if len(parts) > 0 {
+			return strings.Join(parts, "|")
+		}
+	}
 
+	// 2. Intelligent pattern discovery (Fallback path)
+	// Phase A: Check exact PK pattern matches (e.g., ID, PRIMARY_KEY, KEY, GUID, UUID)
+	for col, v := range colMap {
+		if v != nil && pkExactPattern.MatchString(col) {
+			return stringify(v)
+		}
+	}
+
+	// Phase B: Check suffix pattern matches (e.g., MATNR, VBELN, EBELN, KUNNR, ORDER_ID, ITEM_NR)
+	for col, v := range colMap {
+		if v != nil && pkSuffixPattern.MatchString(col) {
+			return stringify(v)
+		}
+	}
+
+	return ""
+}

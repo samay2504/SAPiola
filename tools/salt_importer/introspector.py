@@ -5,22 +5,13 @@ from typing import Dict, List, Set, Any
 import pandas as pd
 from datasets import load_dataset
 
-# We want to identify the exact mapping between these tables.
-# The 4 tables in SALT are:
-# 1. salesdocuments (Headers)
-# 2. salesdocument_items (Line items)
-# 3. customers
-# 4. addresses
-
-TABLE_NAMES = ["salesdocuments", "salesdocument_items", "customers", "addresses"]
-DATASET_NAME = "sap-ai-research/SALT"
-
-def load_data(token: str) -> Dict[str, pd.DataFrame]:
-    print(f"Loading {DATASET_NAME} from Hugging Face...")
+def load_data(dataset_name: str, table_names: List[str],
+              token: str) -> Dict[str, pd.DataFrame]:
+    print(f"Loading {dataset_name} from Hugging Face...")
     dfs = {}
-    for table in TABLE_NAMES:
+    for table in table_names:
         print(f"  -> Downloading {table}...")
-        ds = load_dataset(DATASET_NAME, table, split="train", token=token)
+        ds = load_dataset(dataset_name, table, split="train", token=token)
         # Convert to Pandas for easy subset checking
         dfs[table] = ds.to_pandas()
         print(f"     Loaded {len(dfs[table])} rows.")
@@ -79,6 +70,12 @@ def discover_foreign_keys(dfs: Dict[str, pd.DataFrame], unique_cols: Dict[str, L
                         })
     return fks
 
+def _pascal_case(name: str) -> str:
+    """Convert table name to PascalCase. E.g., 'salesdocument_items' -> 'SalesdocumentItems'."""
+    parts = name.lower().split("_")
+    return "".join(word.capitalize() for word in parts if word)
+
+
 def generate_dsl(dfs: Dict[str, pd.DataFrame], unique_cols: Dict[str, List[str]], fks: List[Dict[str, Any]]) -> str:
     dsl = []
     dsl.append("// DRAFT MAPPING DSL")
@@ -90,11 +87,10 @@ def generate_dsl(dfs: Dict[str, pd.DataFrame], unique_cols: Dict[str, List[str]]
     # or just pick the first unique column.
     table_to_id = {}
     
-    for table in TABLE_NAMES:
+    for table in sorted(dfs.keys()):
         candidates = unique_cols.get(table, [])
-        node_type = "".join([word.capitalize() for word in table.split("_")])
-        if table == "salesdocuments": node_type = "SalesDocument"
-        if table == "salesdocument_items": node_type = "SalesDocumentItem"
+        # Generic PascalCase label — no dataset-specific overrides
+        node_type = _pascal_case(table)
         
         primary_id = candidates[0] if candidates else "UNKNOWN_ID"
         # Try to find a better matching ID based on naming
@@ -109,20 +105,14 @@ def generate_dsl(dfs: Dict[str, pd.DataFrame], unique_cols: Dict[str, List[str]]
     
     dsl.append("")
     
-    # Generate edges
+    # Generate edges — generic labels, no dataset-specific overrides
     for fk in fks:
         source = fk['source_table']
         target = fk['target_table']
         source_col = fk['source_col']
         target_col = fk['target_col']
         
-        edge_name = f"RefersTo_{target}"
-        if source == "salesdocument_items" and target == "salesdocuments":
-            edge_name = "PartOf"
-        elif source == "customers" and target == "addresses":
-            edge_name = "LocatedAt"
-        elif "party" in source_col.lower():
-            edge_name = f"HasParty_{source_col}"
+        edge_name = f"RefersTo_{_pascal_case(target)}"
             
         dsl.append(f"EDGE {edge_name} FROM {source} USING {source_col} -> {target_col}")
         dsl.append(f"//   -> targets {target}({target_col}) [Confidence: {fk['confidence']*100}%]")
@@ -130,12 +120,37 @@ def generate_dsl(dfs: Dict[str, pd.DataFrame], unique_cols: Dict[str, List[str]]
     return "\n".join(dsl)
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="HuggingFace Dataset Introspector for SAPiola",
+        epilog="Discovers FK relationships via empirical value-overlap on offline DataFrames."
+    )
+    parser.add_argument(
+        "--dataset", default=os.environ.get("SAPIOLA_HF_DATASET", "sap-ai-research/SALT"),
+        help="Hugging Face dataset name (default: sap-ai-research/SALT)"
+    )
+    parser.add_argument(
+        "--tables", nargs="+",
+        default=None,
+        help="Table names to introspect (default: all configs in dataset)"
+    )
+    parser.add_argument(
+        "--output", default="salt_mapping.dsl",
+        help="Output DSL file path (default: salt_mapping.dsl)"
+    )
+    args = parser.parse_args()
+
     token = os.environ.get("HF_TOKEN")
     if not token:
         print("Error: HF_TOKEN environment variable is required.")
         sys.exit(1)
-        
-    dfs = load_data(token)
+
+    table_names = args.tables
+    if not table_names:
+        # Default: well-known SALT tables for backward compatibility
+        table_names = ["salesdocuments", "salesdocument_items", "customers", "addresses"]
+        print(f"No --tables specified, using default: {table_names}")
+
+    dfs = load_data(args.dataset, table_names, token)
     
     print("\nAnalyzing uniqueness...")
     unique_cols = identify_unique_columns(dfs)
@@ -150,12 +165,11 @@ def main():
     print("\nGenerating Draft DSL...\n")
     dsl_output = generate_dsl(dfs, unique_cols, fks)
     
-    out_file = "salt_mapping.dsl"
-    with open(out_file, "w") as f:
+    with open(args.output, "w") as f:
         f.write(dsl_output)
         
     print(dsl_output)
-    print(f"\nDraft DSL written to {out_file}")
+    print(f"\nDraft DSL written to {args.output}")
 
 if __name__ == "__main__":
     main()

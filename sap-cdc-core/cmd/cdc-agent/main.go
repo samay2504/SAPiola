@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"os"
 	"os/signal"
@@ -13,6 +14,50 @@ import (
 	"github.com/sapiola/sap-cdc-core/internal/kafka"
 	"go.uber.org/zap"
 )
+
+func loadManifest(path string) (map[string]string, map[string][]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var m struct {
+		Tables []struct {
+			Name        string   `json:"name"`
+			LogTable    string   `json:"log_table"`
+			PrimaryKeys []string `json:"primary_keys"`
+		} `json:"tables"`
+	}
+
+	if err := json.Unmarshal(data, &m); err == nil {
+		tables := make(map[string]string)
+		pks := make(map[string][]string)
+		for _, t := range m.Tables {
+			tables[t.Name] = t.LogTable
+			pks[t.Name] = t.PrimaryKeys
+		}
+		return tables, pks, nil
+	}
+
+	// Fallback to map style
+	var mapStyle struct {
+		Tables map[string]struct {
+			LogTable    string   `json:"log_table"`
+			PrimaryKeys []string `json:"primary_keys"`
+		} `json:"tables"`
+	}
+	if err := json.Unmarshal(data, &mapStyle); err != nil {
+		return nil, nil, err
+	}
+	tables := make(map[string]string)
+	pks := make(map[string][]string)
+	for name, t := range mapStyle.Tables {
+		tables[name] = t.LogTable
+		pks[name] = t.PrimaryKeys
+	}
+	return tables, pks, nil
+}
+
 
 func main() {
 	var (
@@ -41,14 +86,25 @@ func main() {
 	}
 	defer filter.Close()
 
+	manifestPath := os.Getenv("SAPIOLA_SCHEMA_MANIFEST")
+	if manifestPath == "" {
+		manifestPath = "./schema_manifest.json"
+	}
+	
+	tables, pks, err := loadManifest(manifestPath)
+	if err != nil {
+		logger.Fatal("Failed to load schema manifest", zap.Error(err))
+	}
+
 	cfg := connector.SLTReaderConfig{
-		Tables:          map[string]string{"MARA": "Z_MARA_LOG"},
-		MinPollInterval: 1 * time.Second,
+		Tables:            tables,
+		PrimaryKeyColumns: pks,
+		MinPollInterval:   1 * time.Second,
 	}
 	
 	// Open a mock DB connection (or real one depending on DSN)
 	// For Phase 0, we just pass nil to bypass actual DB connection logic since we are just mocking events
-	_ = connector.NewSLTReader(nil, cfg, logger)
+	sltReader := connector.NewSLTReader(nil, cfg, logger)
 	eventChan := make(chan *event.CdcEvent, 100)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -63,25 +119,30 @@ func main() {
 		cancel()
 	}()
 
-	// Start reading events (mocking the loop since Start() isn't implemented natively yet)
+	// Start reading events
 	go func() {
-		ticker := time.NewTicker(2 * time.Second)
+		ticker := time.NewTicker(cfg.MinPollInterval)
 		defer ticker.Stop()
-		var lsn int64 = 1
+		lsns := make(map[string]int64)
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				// Mock reading an event
-				ev := &event.CdcEvent{
-					Table:      "MARA",
-					PrimaryKey: "MAT-123",
-					Operation:  event.OpInsert,
-					LSN:        lsn,
+				for tableName := range cfg.Tables {
+					events, err := sltReader.ReadChanges(ctx, tableName, lsns[tableName])
+					if err != nil {
+						logger.Error("Failed to read changes", zap.String("table", tableName), zap.Error(err))
+						continue
+					}
+					for _, ev := range events {
+						e := ev
+						eventChan <- &e
+						if e.LSN > lsns[tableName] {
+							lsns[tableName] = e.LSN
+						}
+					}
 				}
-				lsn++
-				eventChan <- ev
 			}
 		}
 	}()

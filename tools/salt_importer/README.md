@@ -4,8 +4,10 @@ This tool is responsible for programmatically downloading the `sap-ai-research/S
 
 ## Architecture
 
-1. **Introspector (`introspector.py`)**: Dynamically scans the dataset to discover foreign key relationships empirically (via value-overlap checks) and outputs a draft `salt_mapping.dsl`.
-2. **Importer (`importer.py`)**: Consumes the confirmed `salt_mapping.dsl`, connects to the Gateway, and streams the dataset rows as `OPERATION_INSERT` CDC events.
+1. **Credential Resolver (`credential_resolver.py`)**: Unified resolution chain (`env vars → service key file → fail-with-message`). Catches OAuth UAA-only service keys and prevents hardcoded fallbacks.
+2. **HANA Schema Introspector (`hana_introspector.py`)**: Queries live SAP HANA metadata (`SYS.TABLE_COLUMNS`), detects PKs via uniqueness sampling, discovers foreign keys empirically (`score_foreign_key_confidence`), and outputs `schema_manifest.json` + `hana_mapping.dsl`.
+3. **Dataset Introspector (`introspector.py`)**: Generic CLI for discovering FK relationships on offline Pandas DataFrames.
+4. **Importer (`importer.py`)**: Streams HuggingFace datasets or CDC events to the Ingest Gateway using primary key configurations from `schema_manifest.json` or mapping DSL.
 
 ## Prerequisites
 

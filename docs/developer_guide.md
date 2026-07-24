@@ -36,7 +36,10 @@ export PATH="$HOME/.cargo/bin:$PATH"
 # Set core service ports and configurations
 export GRAPH_SERVER_LISTEN_ADDR="127.0.0.1:50053"
 export SAPIOLA_GRAPH_URL="http://127.0.0.1:50053"
-export SAPIOLA_MAPPING_DSL="tools/salt_importer/salt_mapping.dsl"
+export SAPIOLA_SCHEMA_MANIFEST="tools/salt_importer/schema_manifest.json"
+export SAPIOLA_MAPPING_DSL="tools/salt_importer/hana_mapping.dsl"
+export SAPIOLA_HANA_USER="DBADMIN"
+export SAPIOLA_HANA_PASSWORD="your_password"
 ```
 
 ---
@@ -62,26 +65,38 @@ SAPiola is 100% schema-agnostic. While the SALT dataset is provided as a test fi
 ```
 
 ### Step 1: Introspect your SAP HANA Database
-Use `HanaIntrospector` or `introspector.py` to query SAP HANA metadata tables (`SYS.TABLE_COLUMNS` & `SYS.REFERENTIAL_CONSTRAINTS`):
+Use `hana_introspector.py` with `credential_resolver` to query SAP HANA metadata tables (`SYS.TABLE_COLUMNS`):
 
 ```bash
-# Set your SAP HANA connection string or dump metadata to pandas
-python tools/salt_importer/introspector.py --hana-host <HANA_IP> --hana-port 30015 --user SYSTEM
+# Resolve credentials via env vars or sapiola-dev-key.json
+export SAPIOLA_HANA_USER="SAPIOLA_TEST"
+export SAPIOLA_HANA_PASSWORD="your_password"
+
+# Run unified discovery engine
+python tools/salt_importer/hana_introspector.py \
+  --schema DBADMIN \
+  --table-filter "%_RAG" \
+  --output-dir tools/salt_importer/
 ```
-This automatically computes foreign key value-overlap confidence and generates a draft mapping DSL file (`custom_mapping.dsl`).
+This automatically computes foreign key value-overlap confidence empirically (`score_foreign_key_confidence`), detects primary keys via uniqueness sampling, and generates `schema_manifest.json` + `hana_mapping.dsl`.
 
-### Step 2: Automated DSL Generation & LLM Verification (`custom_mapping.dsl`)
-> **Fully Automated & LLM-Verifiable**: You do **NOT** need to write `.dsl` files by hand. 
-> 1. `introspector.py` automatically generates the complete `custom_mapping.dsl` based on empirical primary key and foreign key confidence scores.
-> 2. The attached **LLM Agent** (via `sap-ai-gateway` or MCP server) can automatically inspect the auto-generated `.dsl` file, refine default relationship labels (e.g., renaming `RefersTo_T001W` to human-friendly `LocatedAtPlant`), verify Pest grammar rules, and update the file automatically.
+### Step 2: Single Source of Truth (`schema_manifest.json`)
+> **Fully Automated & Schema-Agnostic**: You do **NOT** need to write `.dsl` files by hand or update internal code for new SAP schemas.
+> 1. `hana_introspector.py` generates `schema_manifest.json` containing table metadata, column types, primary keys, empirical FK confidence scores, and a SHA-256 fingerprint.
+> 2. The Rust Graph Layer loads `schema_manifest.json` directly via `SAPIOLA_SCHEMA_MANIFEST`, verifying the fingerprint on startup.
+> 3. The Go CDC Agent loads `schema_manifest.json` to configure monitored tables and primary key columns dynamically, falling back to intelligent regex pattern matching (`(?i)(_id|_key|_nr|id|nr|key)$`) if PK configuration is missing.
 
-```dsl
-// AUTO-GENERATED & LLM-VERIFIED MAPPING DSL
-NODE Plant FROM T001W WITH id = WERKS
-NODE StorageLocation FROM T001L WITH id = LGORT
-
-EDGE LocatedAtPlant FROM T001L USING WERKS -> WERKS
-//   -> targets T001W(WERKS) [Confidence: 100.0%]
+```json
+{
+  "source": { "schema": "DBADMIN", "table_filter": "%_RAG" },
+  "tables": {
+    "VBAK_RAG": { "primary_keys": ["VBELN"], "node_label": "VbakRag" }
+  },
+  "relationships": [
+    { "from_table": "VBAP_RAG", "from_col": "VBELN", "to_table": "VBAK_RAG", "to_col": "VBELN", "confidence": 1.0 }
+  ],
+  "fingerprint": "sha256:f2490430b9b11e6d4c0ad15570f1dc1e9bcf31615b4aa82319ae4ef7958972f5"
+}
 ```
 
 ### Step 3: Stream Live CDC Events into SAPiola (`sap-cdc-core`)
@@ -164,17 +179,18 @@ To connect SAPiola to external AI agent frameworks (e.g. Claude Desktop, AGY, VS
 
 ---
 
-## 7. Understanding DSL Path Resolution
+## 7. Understanding Manifest & DSL Path Resolution
 
 If you observe the following warning at startup:
 ```text
-WARN sap_graph_layer: No SAP schema .dsl file found in SAPIOLA_MAPPING_DSL or search directories.
+WARN sap_graph_layer: No SAP schema .dsl file found in SAPIOLA_SCHEMA_MANIFEST, SAPIOLA_MAPPING_DSL, or search directories.
 ```
 
 ### Resolution:
-`sap-graph-layer` automatically checks candidate paths:
-1. Environment variable `SAPIOLA_MAPPING_DSL`
-2. `tools/salt_importer/salt_mapping.dsl` or any `.dsl` file in `tools/`, `config/`, `.`, or `..`
+`sap-graph-layer` automatically checks candidate paths in order of priority:
+1. Environment variable `SAPIOLA_SCHEMA_MANIFEST` (loads `schema_manifest.json`, logs SHA-256 fingerprint)
+2. Environment variable `SAPIOLA_MAPPING_DSL` (direct path to `.dsl` file)
+3. Auto-search for any `.dsl` file in `tools/`, `config/`, `.`, `..`, or `../tools`
 
 ---
 

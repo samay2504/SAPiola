@@ -6,10 +6,10 @@ Unlike traditional batch ETL pipelines, SAPiola instantly decouples complex rela
 
 ## Key Features
 
-- **Zero-ETL Streaming:** Consume SAP HANA (or mock SALT) data live via `sap-streaming-gateway` without heavy batch transformations.
+- **Zero-ETL Streaming & Dynamic Schema Adaptation:** Consume live SAP HANA or CDC data dynamically without hardcoded schemas. Automatically introspect tables, primary keys, and foreign keys via empirical value-overlap scoring to generate `schema_manifest.json`.
 - **Embedded Graph Architecture:** 
-  - **Structural & Relational Data:** Both are handled by a highly-optimized Rust engine (`poly-lsm-core`) using the Fjall LSM tree. This keeps the memory footprint exceptionally light while preserving full transactional reliability.
-  - **Graph Layer:** The `sap-graph-layer` parses Cypher subset queries (`pest`) and executes them directly against the fast embedded LSM structural index.
+  - **Structural & Relational Data:** Both are handled by a highly-optimized Rust engine (`poly-lsm-core`) using the Fjall LSM tree. Keeps memory footprint light while preserving full transactional reliability.
+  - **Graph Layer:** `sap-graph-layer` parses Cypher subset queries (`pest`) and loads `schema_manifest.json` configurations directly with SHA-256 fingerprint verification.
 - **RAG AI Orchestrator:** A Python-based `sap-ai-gateway` that uses `litellm` (supporting Gemini, OpenAI, etc.) to orchestrate domain classification, RBAC checks, graph queries, and LSM pointer resolution before generating hallucinations-free answers.
 - **Universal Agent Access (MCP):** Connect your preferred AI Assistant (Cursor, Claude Desktop) to the `sap-mcp-server` to allow it to natively query the graph, perform adversarial BFS traversals, fetch vertex properties, or ask SAP natural language questions.
 - **Deep RBAC Security:** Tenant IDs (`principal`) are passed through the entire stack. From graph projection to embedding retrieval, if an entity lacks access to a domain (e.g., `finance`), the system stops it cold (`403 Forbidden`).
@@ -67,6 +67,7 @@ node bin/run.js
 ```
 
 ## Further Reading
+- [Schema Discovery Engine](SCHEMA_DISCOVERY.md)
 - [Architecture Deep Dive](architecture.md)
 - [Developer Guide](developer_guide.md)
 - [Command Reference](commands.md)
