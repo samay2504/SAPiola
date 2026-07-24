@@ -68,17 +68,19 @@ SAPiola is 100% schema-agnostic. While the SALT dataset is provided as a test fi
 Use `hana_introspector.py` with `credential_resolver` to query SAP HANA metadata tables (`SYS.TABLE_COLUMNS`):
 
 ```bash
-# Resolve credentials via env vars or sapiola-dev-key.json
+# Provide SAP HANA Cloud credentials via environment variables
+export SAPIOLA_HANA_HOST="your-hana-instance.hanacloud.ondemand.com"
+export SAPIOLA_HANA_PORT="443"
 export SAPIOLA_HANA_USER="SAPIOLA_TEST"
 export SAPIOLA_HANA_PASSWORD="your_password"
 
-# Run unified discovery engine
+# Run discovery against ANY SAP schema (e.g. ERP_PROD, DBADMIN, or custom tables)
 python tools/schema_discovery/hana_introspector.py \
-  --schema DBADMIN \
-  --table-filter "%_RAG" \
+  --schema ERP_PROD \
+  --table-filter "%" \
   --output-dir tools/schema_discovery/
 ```
-This automatically computes foreign key value-overlap confidence empirically (`score_foreign_key_confidence`), detects primary keys via uniqueness sampling, and generates `schema_manifest.json` + `hana_mapping.dsl`.
+This automatically discovers all tables in `ERP_PROD`, computes foreign key value-overlap confidence empirically (`score_foreign_key_confidence`), detects primary keys via uniqueness sampling, and generates `schema_manifest.json` + `hana_mapping.dsl` with a SHA-256 fingerprint.
 
 ### Step 2: Single Source of Truth (`schema_manifest.json`)
 > **Fully Automated & Schema-Agnostic**: You do **NOT** need to write `.dsl` files by hand or update internal code for new SAP schemas.
