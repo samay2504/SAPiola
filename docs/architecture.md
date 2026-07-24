@@ -23,7 +23,8 @@ graph TD
 The ingest layer is responsible for taking raw SAP Change Data Capture (CDC) events and pushing them into our pipeline.
 - **`sap-cdc-core` (Go):** Represents the CDC agent architecture. Reads table monitoring configurations and primary key definitions dynamically from `schema_manifest.json`, with intelligent regex pattern matching (`(?i)(_id|_key|_nr|id|nr|key)$`) as a fallback. Guarantees ordered delivery and idempotency.
 - **`sap-streaming-gateway` (Rust):** The high-throughput dispatcher listening for `CdcEvent` protobuf messages over gRPC.
-- **`tools/salt_importer` (Python):** Unified Schema Discovery & Testing suite (`credential_resolver.py`, `hana_introspector.py`, `introspector.py`, `importer.py`). Generates `schema_manifest.json` via empirical value-overlap foreign key scoring and streams CDC events into the gateway with zero code changes.
+- **`tools/schema_discovery` (Python):** Unified Schema Discovery & Adaptation Suite (`credential_resolver.py`, `hana_introspector.py`, `test_credential_resolver.py`, `test_fk_calibration.py`). Introspects live SAP HANA databases, discovers PKs/FKs, and outputs `schema_manifest.json` + `hana_mapping.dsl` for zero-code-change onboarding.
+- **`tools/salt_importer` (Python):** Offline test importer for Hugging Face's `SALT` research dataset (`introspector.py`, `importer.py`).
 
 ### 2. Embedded Storage Engine (`poly-lsm-core`)
 Instead of bloated property graphs, SAPiola relies on **Fjall**, a Rust-based Log-Structured Merge (LSM) tree database. This single core powers both the graph structural index and the relational property store.

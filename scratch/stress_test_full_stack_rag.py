@@ -18,7 +18,7 @@ sys.path.insert(0, str(gateway_path))
 gen_path = gateway_path / "sapiola_ai" / "gen"
 sys.path.insert(0, str(gen_path))
 
-tools_path = pathlib.Path(__file__).parent.parent / "tools" / "salt_importer"
+tools_path = pathlib.Path(__file__).parent.parent / "tools" / "schema_discovery"
 sys.path.insert(0, str(tools_path))
 
 from sapiola.v1 import graph_pb2, graph_pb2_grpc, storage_pb2, storage_pb2_grpc

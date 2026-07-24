@@ -36,8 +36,8 @@ export PATH="$HOME/.cargo/bin:$PATH"
 # Set core service ports and configurations
 export GRAPH_SERVER_LISTEN_ADDR="127.0.0.1:50053"
 export SAPIOLA_GRAPH_URL="http://127.0.0.1:50053"
-export SAPIOLA_SCHEMA_MANIFEST="tools/salt_importer/schema_manifest.json"
-export SAPIOLA_MAPPING_DSL="tools/salt_importer/hana_mapping.dsl"
+export SAPIOLA_SCHEMA_MANIFEST="tools/schema_discovery/schema_manifest.json"
+export SAPIOLA_MAPPING_DSL="tools/schema_discovery/hana_mapping.dsl"
 export SAPIOLA_HANA_USER="DBADMIN"
 export SAPIOLA_HANA_PASSWORD="your_password"
 ```
@@ -73,10 +73,10 @@ export SAPIOLA_HANA_USER="SAPIOLA_TEST"
 export SAPIOLA_HANA_PASSWORD="your_password"
 
 # Run unified discovery engine
-python tools/salt_importer/hana_introspector.py \
+python tools/schema_discovery/hana_introspector.py \
   --schema DBADMIN \
   --table-filter "%_RAG" \
-  --output-dir tools/salt_importer/
+  --output-dir tools/schema_discovery/
 ```
 This automatically computes foreign key value-overlap confidence empirically (`score_foreign_key_confidence`), detects primary keys via uniqueness sampling, and generates `schema_manifest.json` + `hana_mapping.dsl`.
 

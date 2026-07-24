@@ -60,11 +60,11 @@ export SAPIOLA_HANA_USER="SAPIOLA_TEST"
 export SAPIOLA_HANA_PASSWORD="your_password"
 
 # Run discovery
-python tools/salt_importer/hana_introspector.py \
+python tools/schema_discovery/hana_introspector.py \
   --schema DBADMIN \
   --table-filter "%_RAG" \
   --min-fk-confidence 0.8 \
-  --output-dir tools/salt_importer/
+  --output-dir tools/schema_discovery/
 
 # Output: schema_manifest.json + hana_mapping.dsl
 ```
@@ -73,7 +73,7 @@ python tools/salt_importer/hana_introspector.py \
 
 | Function | File | Input | Used By |
 |:---|:---|:---|:---|
-| `HanaIntrospector.score_foreign_key_confidence()` | `hana_introspector.py` | Live HANA via SQL | Schema manifest generator |
-| `discover_foreign_keys()` | `introspector.py` | In-memory Pandas DataFrames | Offline HuggingFace dataset import |
+| `HanaIntrospector.score_foreign_key_confidence()` | `tools/schema_discovery/hana_introspector.py` | Live HANA via SQL | Schema manifest generator |
+| `discover_foreign_keys()` | `tools/salt_importer/introspector.py` | In-memory Pandas DataFrames | Offline HuggingFace dataset import |
 
 These are **not duplicates** — they operate on fundamentally different data sources (live SQL vs. offline DataFrames) and never compete on the same input.

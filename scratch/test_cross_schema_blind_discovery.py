@@ -14,7 +14,7 @@ import pathlib
 import subprocess
 from hdbcli import dbapi
 
-tools_path = pathlib.Path(__file__).parent.parent / "tools" / "salt_importer"
+tools_path = pathlib.Path(__file__).parent.parent / "tools" / "schema_discovery"
 sys.path.insert(0, str(tools_path))
 
 from credential_resolver import resolve_hana_credentials
