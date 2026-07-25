@@ -1,3 +1,18 @@
+// ==============================================================================
+// COPYRIGHT & PATENT NOTICE
+// Copyright (c) 2026 Samay Mehar (ID: 487266569521). All Rights Reserved.
+//
+// PATENTS PENDING & INTELLECTUAL PROPERTY NOTICE:
+// This source code, algorithm, architecture, and underlying inventions are the
+// proprietary intellectual property of Samay Mehar (ID: 487266569521).
+// Protected under national and international copyright, patent, and trade secret laws.
+//
+// COMMERCIAL LICENSE NOTICE:
+// Unauthorized copying, modification, distribution, reverse engineering, or commercial
+// exploitation of this software in whole or in part without express written authorization
+// from Samay Mehar is strictly prohibited.
+// ==============================================================================
+
 use std::sync::Arc;
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::{info, warn};
